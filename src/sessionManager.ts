@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { writeFileSync, mkdirSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync, fstatSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import type { SessionStore } from "./sessionStore.js";
-import type { SessionEntry, AvailableSession } from "./types.js";
+import type { SessionEntry, AvailableSession, AllSession } from "./types.js";
 
 export interface CommandRunner {
   run(cmd: string, args: string[]): string;
@@ -118,6 +118,21 @@ function hasConversation(file: string): boolean {
     readChunk(file, false, PREVIEW_HEAD).includes('"type":"assistant"') ||
     readChunk(file, true, PREVIEW_TAIL).includes('"type":"assistant"')
   );
+}
+
+// The real working directory a session ran in, from the session file itself
+// (folder-name encoding is lossy, but records carry an exact "cwd").
+function sessionCwd(file: string): string | null {
+  for (const line of readChunk(file, false, PREVIEW_HEAD).split("\n")) {
+    if (!line.includes('"cwd"')) continue;
+    try {
+      const e = JSON.parse(line) as { cwd?: unknown };
+      if (typeof e.cwd === "string" && e.cwd) return e.cwd;
+    } catch {
+      /* skip non-json */
+    }
+  }
+  return null;
 }
 
 export class SessionManager {
@@ -236,6 +251,70 @@ export class SessionManager {
     };
     this.o.store.upsert(entry);
     return entry;
+  }
+
+  // Scan ALL of ~/.claude/projects (no registration needed) for the most
+  // recent real sessions across every project, newest first.
+  scanRecent(limit = 50): AllSession[] {
+    const root = this.o.claudeProjectsDir;
+    if (!existsSync(root)) return [];
+    const running = this.runningCwds();
+    const all: Array<{ full: string; id: string; mtimeMs: number }> = [];
+    for (const folder of readdirSync(root)) {
+      let files: string[];
+      try {
+        files = readdirSync(join(root, folder));
+      } catch {
+        continue;
+      }
+      for (const f of files) {
+        if (!f.endsWith(".jsonl")) continue;
+        const full = join(root, folder, f);
+        try {
+          all.push({ full, id: f.replace(/\.jsonl$/, ""), mtimeMs: statSync(full).mtimeMs });
+        } catch {
+          /* skip */
+        }
+      }
+    }
+    all.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    const out: AllSession[] = [];
+    for (const s of all) {
+      if (out.length >= limit) break;
+      const cwd = sessionCwd(s.full);
+      if (!cwd || !existsSync(cwd)) continue;
+      if (!hasConversation(s.full)) continue; // skip stubs
+      out.push({
+        id: s.id,
+        projectPath: cwd,
+        projectName: basename(cwd) || cwd,
+        mtime: new Date(s.mtimeMs).toISOString(),
+        snippet: sessionPreview(s.full),
+        running: running.has(cwd),
+      });
+    }
+    return out;
+  }
+
+  // Adopt a session found by scanRecent — auto-registers its project by path.
+  adoptByPath(id: string, path: string): SessionEntry {
+    const existing = this.o.store.listProjects().find((p) => p.path === path);
+    const name = existing?.name ?? (basename(path) || path);
+    if (!existing) this.o.store.addProject(name, path);
+    return this.adopt(id, name);
+  }
+
+  // Best-effort: cwds of live `claude` processes (for a "running" badge).
+  private runningCwds(): Set<string> {
+    try {
+      const out = this.o.runner.run("/bin/bash", [
+        "-c",
+        'for pid in $(/usr/bin/pgrep -x claude 2>/dev/null); do /usr/sbin/lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | /usr/bin/sed -n "s/^n//p"; done',
+      ]);
+      return new Set(out.split("\n").map((l) => l.trim()).filter(Boolean));
+    } catch {
+      return new Set();
+    }
   }
 
   private liveFleetSessions(): string[] {

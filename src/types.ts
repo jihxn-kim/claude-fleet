@@ -48,3 +48,13 @@ export interface AvailableSession {
   mtime: string; // ISO, 세션 파일 최종 수정시각
   snippet: string; // 첫 user 메시지 일부
 }
+
+// A session found by scanning ALL of ~/.claude/projects (no registration needed).
+export interface AllSession {
+  id: string;
+  projectPath: string; // real cwd from the session file
+  projectName: string; // basename of projectPath
+  mtime: string; // ISO
+  snippet: string;
+  running: boolean; // a live claude process has this cwd
+}

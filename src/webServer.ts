@@ -121,11 +121,22 @@ export function createServer(
             return sendHttpError(res, e);
           }
         }
+        if (path === "/api/all-sessions" && method === "GET") {
+          if (!sessions) return send(res, 404, { error: "sessions disabled" });
+          try {
+            return send(res, 200, sessions.scanRecent());
+          } catch (e) {
+            return sendHttpError(res, e);
+          }
+        }
         if (path === "/api/sessions/adopt" && method === "POST") {
           if (!sessions) return send(res, 404, { error: "sessions disabled" });
           try {
-            const { id, project } = (await readJson(req)) as { id: string; project: string };
-            return send(res, 201, sessions.adopt(id, project));
+            const body = (await readJson(req)) as { id: string; project?: string; projectPath?: string };
+            const entry = body.projectPath
+              ? sessions.adoptByPath(body.id, body.projectPath)
+              : sessions.adopt(body.id, body.project as string);
+            return send(res, 201, entry);
           } catch (e) {
             return sendHttpError(res, e);
           }
