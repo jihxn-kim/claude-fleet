@@ -18,7 +18,7 @@ class FakeRunner implements CommandRunner {
   }
 }
 
-function setup(projects: Record<string, string> = { daggle: "/p/daggle" }) {
+function setup(projects: Record<string, string> = { myapp: "/p/myapp" }) {
   const dir = mkdtempSync(join(tmpdir(), "fleet-mgr-"));
   const store = new SessionStore(join(dir, "sessions.json"), join(dir, "projects.json"), () => "2026-07-21T00:00:00.000Z");
   for (const [n, p] of Object.entries(projects)) store.addProject(n, p);
@@ -34,10 +34,10 @@ function setup(projects: Record<string, string> = { daggle: "/p/daggle" }) {
 
 test("launch: writes mcp config, runs tmux new-session with claude --session-id, registers running", () => {
   const { store, runner, mgr, dir } = setup();
-  const e = mgr.launch("daggle");
+  const e = mgr.launch("myapp");
   expect(e.status).toBe("running");
-  expect(e.project).toBe("daggle");
-  expect(e.tmuxName).toBe("fleet__daggle__uuid10"); // slug + first6 of "uuid10000"
+  expect(e.project).toBe("myapp");
+  expect(e.tmuxName).toBe("fleet__myapp__uuid10"); // slug + first6 of "uuid10000"
   // mcp config written
   const cfgPath = join(dir, "mcp", `${e.id}.json`);
   expect(existsSync(cfgPath)).toBe(true);
@@ -46,7 +46,7 @@ test("launch: writes mcp config, runs tmux new-session with claude --session-id,
   // tmux call
   const call = runner.calls.find((c) => c.cmd === "tmux" && c.args[0] === "new-session")!;
   expect(call.args).toEqual([
-    "new-session", "-d", "-s", "fleet__daggle__uuid10", "-c", "/p/daggle",
+    "new-session", "-d", "-s", "fleet__myapp__uuid10", "-c", "/p/myapp",
     "claude", "--session-id", e.id,
     "--permission-mode", "acceptEdits",
     "--append-system-prompt", "RULE",
@@ -64,10 +64,10 @@ test("launch unknown project throws HttpError 400", () => {
 
 test("launch rejected with 409 when 2 already running", () => {
   const { mgr } = setup();
-  mgr.launch("daggle");
-  mgr.launch("daggle");
+  mgr.launch("myapp");
+  mgr.launch("myapp");
   try {
-    mgr.launch("daggle");
+    mgr.launch("myapp");
     throw new Error("should have thrown");
   } catch (e) {
     expect(e).toBeInstanceOf(HttpError);
@@ -77,21 +77,21 @@ test("launch rejected with 409 when 2 already running", () => {
 
 test("close: kills tmux and sets stopped; missing -> 404; kill error swallowed", () => {
   const { store, runner, mgr } = setup();
-  const e = mgr.launch("daggle");
+  const e = mgr.launch("myapp");
   const closed = mgr.close(e.id);
   expect(closed.status).toBe("stopped");
   expect(runner.calls.some((c) => c.args[0] === "kill-session" && c.args.includes(e.tmuxName))).toBe(true);
   expect(() => mgr.close("nope")).toThrowError(expect.objectContaining({ status: 404 }));
   // kill error swallowed
   runner.failKeys.add("kill-session");
-  const e2 = mgr.launch("daggle");
+  const e2 = mgr.launch("myapp");
   expect(() => mgr.close(e2.id)).not.toThrow();
   expect(store.getSession(e2.id)!.status).toBe("stopped");
 });
 
 test("resume: stopped -> new-session with --resume, running; running -> 409", () => {
   const { runner, mgr } = setup();
-  const e = mgr.launch("daggle");
+  const e = mgr.launch("myapp");
   mgr.close(e.id);
   runner.calls.length = 0;
   const r = mgr.resume(e.id);
@@ -106,17 +106,17 @@ test("resume: stopped -> new-session with --resume, running; running -> 409", ()
 
 test("resume rejected with 409 when project already has 2 running", () => {
   const { mgr } = setup();
-  const a = mgr.launch("daggle");
-  mgr.launch("daggle");   // 2 running
+  const a = mgr.launch("myapp");
+  mgr.launch("myapp");   // 2 running
   mgr.close(a.id);        // a stopped; 1 running
-  mgr.launch("daggle");   // 2 running again (a still stopped)
+  mgr.launch("myapp");   // 2 running again (a still stopped)
   expect(() => mgr.resume(a.id)).toThrowError(expect.objectContaining({ status: 409 }));
 });
 
 test("reconcile: running sessions absent from tmux list become stopped", () => {
   const { store, runner, mgr } = setup();
-  const a = mgr.launch("daggle");
-  const b = mgr.launch("daggle");
+  const a = mgr.launch("myapp");
+  const b = mgr.launch("myapp");
   // only a is alive in tmux
   runner.listOutput = `${a.tmuxName}\nother-unrelated\n`;
   mgr.reconcile();
@@ -126,7 +126,7 @@ test("reconcile: running sessions absent from tmux list become stopped", () => {
 
 test("reconcile: tmux server down (list-sessions errors) marks all running stopped", () => {
   const { store, runner, mgr } = setup();
-  const a = mgr.launch("daggle");
+  const a = mgr.launch("myapp");
   runner.failKeys.add("list-sessions");
   mgr.reconcile();
   expect(store.getSession(a.id)!.status).toBe("stopped");
@@ -134,7 +134,7 @@ test("reconcile: tmux server down (list-sessions errors) marks all running stopp
 
 test("openTerminal runs osascript for the session; missing -> 404", () => {
   const { runner, mgr } = setup();
-  const e = mgr.launch("daggle");
+  const e = mgr.launch("myapp");
   mgr.openTerminal(e.id);
   expect(runner.calls.some((c) => c.cmd === "osascript" && c.args.join(" ").includes(e.tmuxName))).toBe(true);
   expect(() => mgr.openTerminal("nope")).toThrowError(expect.objectContaining({ status: 404 }));
@@ -164,8 +164,8 @@ test("discover lists sessions for a project's claude dir with id/mtime/snippet, 
     ruleText: "RULE", claudeProjectsDir: claudeDir,
     now: () => "2026-07-21T00:00:00.000Z", genId: () => "unused",
   });
-  seedClaudeSession(claudeDir, "/p/daggle", "11111111-aaaa", "첫 작업 요청 내용");
-  const list = mgr2.discover("daggle");
+  seedClaudeSession(claudeDir, "/p/myapp", "11111111-aaaa", "첫 작업 요청 내용");
+  const list = mgr2.discover("myapp");
   expect(list).toHaveLength(1);
   expect(list[0].id).toBe("11111111-aaaa");
   expect(list[0].snippet).toContain("첫 작업 요청");
@@ -180,7 +180,7 @@ test("discover on unknown project throws 400; empty when no claude dir", () => {
     ruleText: "RULE", claudeProjectsDir: join(dir, "nope-claude"),
   });
   expect(() => mgr2.discover("ghost")).toThrowError(expect.objectContaining({ status: 400 }));
-  expect(mgr2.discover("daggle")).toEqual([]); // dir 없음 → 빈 배열
+  expect(mgr2.discover("myapp")).toEqual([]); // dir 없음 → 빈 배열
 });
 
 test("adopt registers the given id, resumes it, running", () => {
@@ -192,11 +192,11 @@ test("adopt registers the given id, resumes it, running", () => {
     mcpDir: join(dir, "mcp"), ruleText: "RULE", claudeProjectsDir: claudeDir,
     now: () => "2026-07-21T00:00:00.000Z",
   });
-  seedClaudeSession(claudeDir, "/p/daggle", "22222222-bbbb", "이전 대화");
-  const e = mgr.adopt("22222222-bbbb", "daggle");
+  seedClaudeSession(claudeDir, "/p/myapp", "22222222-bbbb", "이전 대화");
+  const e = mgr.adopt("22222222-bbbb", "myapp");
   expect(e.id).toBe("22222222-bbbb");
   expect(e.status).toBe("running");
-  expect(e.tmuxName).toBe("fleet__daggle__222222");
+  expect(e.tmuxName).toBe("fleet__myapp__222222");
   const call = runner.calls.find((c) => c.args[0] === "new-session")!;
   expect(call.args).toContain("--resume");
   expect(call.args).toContain("22222222-bbbb");
@@ -214,14 +214,14 @@ test("adopt: unknown project 400, missing session file 404, id already running 4
     now: () => "2026-07-21T00:00:00.000Z", genId: (() => { let n = 0; return () => `gen${++n}0000`; })(),
   });
   expect(() => mgr.adopt("x", "ghost")).toThrowError(expect.objectContaining({ status: 400 }));
-  expect(() => mgr.adopt("no-file", "daggle")).toThrowError(expect.objectContaining({ status: 404 }));
-  seedClaudeSession(claudeDir, "/p/daggle", "33333333-cccc", "hi");
-  mgr.adopt("33333333-cccc", "daggle"); // running now
-  expect(() => mgr.adopt("33333333-cccc", "daggle")).toThrowError(expect.objectContaining({ status: 409 })); // already running
+  expect(() => mgr.adopt("no-file", "myapp")).toThrowError(expect.objectContaining({ status: 404 }));
+  seedClaudeSession(claudeDir, "/p/myapp", "33333333-cccc", "hi");
+  mgr.adopt("33333333-cccc", "myapp"); // running now
+  expect(() => mgr.adopt("33333333-cccc", "myapp")).toThrowError(expect.objectContaining({ status: 409 })); // already running
   // fill to 2 running with fresh launches, then adopt a 3rd distinct file → 409 max-2
-  seedClaudeSession(claudeDir, "/p/daggle", "44444444-dddd", "hi2");
-  mgr.launch("daggle"); // 2 running (33.. + gen1)
-  expect(() => mgr.adopt("44444444-dddd", "daggle")).toThrowError(expect.objectContaining({ status: 409 }));
+  seedClaudeSession(claudeDir, "/p/myapp", "44444444-dddd", "hi2");
+  mgr.launch("myapp"); // 2 running (33.. + gen1)
+  expect(() => mgr.adopt("44444444-dddd", "myapp")).toThrowError(expect.objectContaining({ status: 409 }));
 });
 
 test("snippet strips control chars (terminal-injection safe) and reads bounded prefix", () => {
@@ -232,8 +232,8 @@ test("snippet strips control chars (terminal-injection safe) and reads bounded p
     store, runner, repoRoot: "/repo", orchUrl: "http://127.0.0.1:4179",
     mcpDir: join(dir, "mcp"), ruleText: "RULE", claudeProjectsDir: claudeDir,
   });
-  seedClaudeSession(claudeDir, "/p/daggle", "55555555-eeee", "hi\x1b[31mred\x1b[0m\tthere");
-  const snip = mgr.discover("daggle").find((s) => s.id === "55555555-eeee")!.snippet;
+  seedClaudeSession(claudeDir, "/p/myapp", "55555555-eeee", "hi\x1b[31mred\x1b[0m\tthere");
+  const snip = mgr.discover("myapp").find((s) => s.id === "55555555-eeee")!.snippet;
   expect(snip).not.toMatch(/[\x00-\x1f]/);
   expect(snip).toContain("hi");
 });
@@ -246,7 +246,7 @@ test("snippet = LAST real user message, skipping caveats/system/tool_result turn
     store, runner, repoRoot: "/repo", orchUrl: "http://127.0.0.1:4179",
     mcpDir: join(dir, "mcp"), ruleText: "RULE", claudeProjectsDir: claudeDir,
   });
-  const d = join(claudeDir, "/p/daggle".replace(/[/.]/g, "-"));
+  const d = join(claudeDir, "/p/myapp".replace(/[/.]/g, "-"));
   _mk(d, { recursive: true });
   const lines = [
     JSON.stringify({ type: "user", message: { role: "user", content: "<local-command-caveat>ignore me" } }),
@@ -256,7 +256,7 @@ test("snippet = LAST real user message, skipping caveats/system/tool_result turn
     JSON.stringify({ type: "user", message: { role: "user", content: "방화벽 포트 왜 안 막혀?" } }),
   ].join("\n");
   _wf(join(d, "77777777-ffff.jsonl"), lines);
-  const snip = mgr.discover("daggle").find((s) => s.id === "77777777-ffff")!.snippet;
+  const snip = mgr.discover("myapp").find((s) => s.id === "77777777-ffff")!.snippet;
   expect(snip).toBe("방화벽 포트 왜 안 막혀?");
 });
 
@@ -268,11 +268,11 @@ test("discover hides empty stub sessions (no assistant turn)", () => {
     store, runner, repoRoot: "/repo", orchUrl: "http://127.0.0.1:4179",
     mcpDir: join(dir, "mcp"), ruleText: "RULE", claudeProjectsDir: claudeDir,
   });
-  const d = join(claudeDir, "/p/daggle".replace(/[/.]/g, "-"));
+  const d = join(claudeDir, "/p/myapp".replace(/[/.]/g, "-"));
   _mk(d, { recursive: true });
   _wf(join(d, "aaaaaaaa-stub.jsonl"), JSON.stringify({ type: "user", message: { role: "user", content: "hi" } }));
-  seedClaudeSession(claudeDir, "/p/daggle", "bbbbbbbb-real", "진짜 대화");
-  const ids = mgr.discover("daggle").map((s) => s.id);
+  seedClaudeSession(claudeDir, "/p/myapp", "bbbbbbbb-real", "진짜 대화");
+  const ids = mgr.discover("myapp").map((s) => s.id);
   expect(ids).toContain("bbbbbbbb-real");
   expect(ids).not.toContain("aaaaaaaa-stub");
 });

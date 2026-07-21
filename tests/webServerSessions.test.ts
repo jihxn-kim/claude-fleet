@@ -22,7 +22,7 @@ function boot() {
   const dir = mkdtempSync(join(tmpdir(), "fleet-web2-"));
   const decisions = new DecisionStore(join(dir, "h.jsonl"));
   const store = new SessionStore(join(dir, "sessions.json"), join(dir, "projects.json"));
-  store.addProject("daggle", "/p/daggle");
+  store.addProject("myapp", "/p/myapp");
   const runner = new FakeRunner();
   let seq = 0;
   const sessions = new SessionManager({
@@ -44,16 +44,16 @@ test("GET /api/projects returns registered projects (token-guarded)", async () =
   const { base, close } = await boot();
   expect((await fetch(`${base}/api/projects`)).status).toBe(401);
   const r = await fetch(q(base, "/api/projects"));
-  expect(await r.json()).toEqual([{ name: "daggle", path: "/p/daggle" }]);
+  expect(await r.json()).toEqual([{ name: "myapp", path: "/p/myapp" }]);
   close();
 });
 
 test("POST /api/sessions launches; 3rd is 409; GET lists them", async () => {
   const { base, close } = await boot();
-  const a = await (await fetch(q(base, "/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: "daggle" }) })).json();
+  const a = await (await fetch(q(base, "/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: "myapp" }) })).json();
   expect(a.status).toBe("running");
-  await fetch(q(base, "/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: "daggle" }) });
-  const third = await fetch(q(base, "/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: "daggle" }) });
+  await fetch(q(base, "/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: "myapp" }) });
+  const third = await fetch(q(base, "/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: "myapp" }) });
   expect(third.status).toBe(409);
   const list = await (await fetch(q(base, "/api/sessions"))).json();
   expect(list).toHaveLength(2);
@@ -70,7 +70,7 @@ test("POST /api/sessions unknown project -> 400", async () => {
 
 test("close then resume via endpoints", async () => {
   const { base, close } = await boot();
-  const a = await (await fetch(q(base, "/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: "daggle" }) })).json();
+  const a = await (await fetch(q(base, "/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: "myapp" }) })).json();
   const c = await fetch(q(base, `/api/sessions/${a.id}/close`), { method: "POST" });
   expect((await c.json()).status).toBe("stopped");
   const r = await fetch(q(base, `/api/sessions/${a.id}/resume`), { method: "POST" });
@@ -80,7 +80,7 @@ test("close then resume via endpoints", async () => {
 
 test("GET /api/decisions enriches with session {project,tmuxName}; /internal/notify sets+clears notice", async () => {
   const { base, decisions, sessions, close } = await boot();
-  const a = await (await fetch(q(base, "/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: "daggle" }) })).json();
+  const a = await (await fetch(q(base, "/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: "myapp" }) })).json();
   // a stuck notice
   await fetch(`${base}/internal/notify`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sessionId: a.id, message: "waiting on perm" }) });
   let list = await (await fetch(q(base, "/api/sessions"))).json();
@@ -89,7 +89,7 @@ test("GET /api/decisions enriches with session {project,tmuxName}; /internal/not
   fetch(`${base}/internal/decisions`, { method: "POST", headers: { "content-type": "application/json", "x-fleet-session": a.id }, body: JSON.stringify({ title: "t", why_now: "w", payoff: "p", tradeoff: "tr", options: [{ n: 1, label: "x" }], allow_freetext: true }) }).catch(() => {});
   let pend: any[] = [];
   for (let i = 0; i < 50 && pend.length === 0; i++) { pend = await (await fetch(q(base, "/api/decisions"))).json(); if (!pend.length) await new Promise((r) => setTimeout(r, 10)); }
-  expect(pend[0].session).toEqual({ project: "daggle", tmuxName: a.tmuxName });
+  expect(pend[0].session).toEqual({ project: "myapp", tmuxName: a.tmuxName });
   // creating the decision cleared the stuck notice
   list = await (await fetch(q(base, "/api/sessions"))).json();
   expect(list.find((s: any) => s.id === a.id).notice).toBeNull();
@@ -112,15 +112,15 @@ function seedSession(dir: string, projectPath: string, id: string, firstUser: st
 
 test("GET /api/projects/:name/available lists discoverable sessions; adopt registers one", async () => {
   const { base, dir, close } = await boot();
-  // daggle project registered at /p/daggle in boot(); seed a claude session there
-  seedSession(dir, "/p/daggle", "aaaa1111-2222", "이전에 하던 작업");
-  const avail = await (await fetch(q(base, "/api/projects/daggle/available"))).json();
+  // myapp project registered at /p/myapp in boot(); seed a claude session there
+  seedSession(dir, "/p/myapp", "aaaa1111-2222", "이전에 하던 작업");
+  const avail = await (await fetch(q(base, "/api/projects/myapp/available"))).json();
   expect(avail).toHaveLength(1);
   expect(avail[0].id).toBe("aaaa1111-2222");
 
   const adopted = await fetch(q(base, "/api/sessions/adopt"), {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: "aaaa1111-2222", project: "daggle" }),
+    body: JSON.stringify({ id: "aaaa1111-2222", project: "myapp" }),
   });
   expect(adopted.status).toBe(201);
   const body = await adopted.json();
@@ -136,7 +136,7 @@ test("adopt with missing session file → 404", async () => {
   const { base, close } = await boot();
   const r = await fetch(q(base, "/api/sessions/adopt"), {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: "nope", project: "daggle" }),
+    body: JSON.stringify({ id: "nope", project: "myapp" }),
   });
   expect(r.status).toBe(404);
   close();

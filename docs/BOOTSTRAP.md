@@ -22,15 +22,15 @@ FLEET_PANEL_TOKEN='원하는-긴-토큰' npm start
 claude mcp add fleet \
   --env FLEET_URL=http://127.0.0.1:4179 \
   --env FLEET_SESSION_TOKEN=session-1 \
-  -- /Users/kimjihun/Desktop/claude-fleet/node_modules/.bin/tsx \
-     /Users/kimjihun/Desktop/claude-fleet/src/mcpBridge.ts
+  -- /Users/you/Desktop/claude-fleet/node_modules/.bin/tsx \
+     /Users/you/Desktop/claude-fleet/src/mcpBridge.ts
 ```
 
 ## 3. auto 모드로 세션 시작 (tmux 안)
 ```bash
 tmux new -s proj1
 claude --permission-mode acceptEdits \
-  --append-system-prompt "$(cat /Users/kimjihun/Desktop/claude-fleet/fleet-rule.txt)"
+  --append-system-prompt "$(cat /Users/you/Desktop/claude-fleet/fleet-rule.txt)"
 ```
 - `tmux attach -t proj1` 로 다시 붙고, `Ctrl-b d` 로 떼어놓는다(세션은 계속 삶).
 
@@ -42,20 +42,20 @@ claude --permission-mode acceptEdits \
 
 ### fleet CLI 별칭 (1회)
 ```bash
-alias fleet='FLEET_PANEL_TOKEN=원하는-긴-토큰 /Users/kimjihun/Desktop/claude-fleet/node_modules/.bin/tsx /Users/kimjihun/Desktop/claude-fleet/src/cli.ts'
+alias fleet='FLEET_PANEL_TOKEN=원하는-긴-토큰 /Users/you/Desktop/claude-fleet/node_modules/.bin/tsx /Users/you/Desktop/claude-fleet/src/cli.ts'
 ```
 (오케스트레이터를 같은 `FLEET_PANEL_TOKEN`으로 `npm start` 해둔다.)
 
 ### 프로젝트 등록 (1회)
 ```bash
-fleet project add daggle /Users/kimjihun/work/daggle
-fleet project add printtie /Users/kimjihun/work/printtie
+fleet project add myapp /Users/you/work/myapp
+fleet project add webapp /Users/you/work/webapp
 ```
-또는 `data/projects.json` 직접 편집: `{ "daggle": { "path": "/…/daggle" } }`.
+또는 `data/projects.json` 직접 편집: `{ "myapp": { "path": "/…/myapp" } }`.
 
 ### 세션 관리
 ```bash
-fleet new daggle        # 새 세션(프로젝트당 running 최대 2)
+fleet new myapp        # 새 세션(프로젝트당 running 최대 2)
 fleet ls                # 세션 목록(●=running ○=stopped, ⚠️=주목)
 fleet attach <id>       # 맥에서 포그라운드로 (히스토리 그대로 보임; Ctrl-b d 로 떼기)
 fleet kill <id>         # 닫기(tmux 종료, resume 가능하게 유지)

@@ -11,8 +11,8 @@ function newStore() {
 }
 function entry(over: Partial<SessionEntry> = {}): SessionEntry {
   return {
-    id: "id1", project: "daggle", projectPath: "/p/daggle",
-    tmuxName: "fleet__daggle__id1", status: "running",
+    id: "id1", project: "myapp", projectPath: "/p/myapp",
+    tmuxName: "fleet__myapp__id1", status: "running",
     startedAt: "2026-07-21T00:00:00.000Z", lastSeen: "2026-07-21T00:00:00.000Z", ...over,
   };
 }
@@ -25,9 +25,9 @@ test("missing files read as empty", () => {
 
 test("addProject then listProjects/getProject", () => {
   const s = newStore();
-  s.addProject("daggle", "/p/daggle");
-  expect(s.listProjects()).toEqual([{ name: "daggle", path: "/p/daggle" }]);
-  expect(s.getProject("daggle")).toEqual({ name: "daggle", path: "/p/daggle" });
+  s.addProject("myapp", "/p/myapp");
+  expect(s.listProjects()).toEqual([{ name: "myapp", path: "/p/myapp" }]);
+  expect(s.getProject("myapp")).toEqual({ name: "myapp", path: "/p/myapp" });
   expect(s.getProject("nope")).toBeUndefined();
 });
 
@@ -45,9 +45,9 @@ test("runningCount counts only running for that project", () => {
   s.upsert(entry({ id: "a", status: "running" }));
   s.upsert(entry({ id: "b", status: "running" }));
   s.upsert(entry({ id: "c", status: "stopped" }));
-  s.upsert(entry({ id: "d", project: "printtie", status: "running" }));
-  expect(s.runningCount("daggle")).toBe(2);
-  expect(s.runningCount("printtie")).toBe(1);
+  s.upsert(entry({ id: "d", project: "webapp", status: "running" }));
+  expect(s.runningCount("myapp")).toBe(2);
+  expect(s.runningCount("webapp")).toBe(1);
 });
 
 test("setStatus updates status + lastSeen; unknown id returns undefined", () => {
@@ -71,7 +71,7 @@ test("persistence: a new store instance reads the same files", () => {
   const dir = mkdtempSync(join(tmpdir(), "fleet-persist-"));
   const p = join(dir, "projects.json"), ss = join(dir, "sessions.json");
   const a = new SessionStore(ss, p);
-  a.addProject("daggle", "/p/daggle");
+  a.addProject("myapp", "/p/myapp");
   a.upsert(entry());
   const b = new SessionStore(ss, p);
   expect(b.listProjects()).toHaveLength(1);
