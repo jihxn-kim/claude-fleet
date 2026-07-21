@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { DecisionStore } from "./decisionStore.js";
@@ -25,6 +26,7 @@ const sessions = new SessionManager({
   orchUrl: `http://127.0.0.1:${CONFIG.port}`,
   mcpDir: join(CONFIG.dataDir, "mcp"),
   ruleText: readFileSync(join(repoRoot, "fleet-rule.txt"), "utf8"),
+  claudeProjectsDir: join(homedir(), ".claude", "projects"),
 });
 
 const publicDir = join(repoRoot, "public");

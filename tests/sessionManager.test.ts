@@ -26,7 +26,7 @@ function setup(projects: Record<string, string> = { daggle: "/p/daggle" }) {
   let seq = 0;
   const mgr = new SessionManager({
     store, runner, repoRoot: "/repo", orchUrl: "http://127.0.0.1:4179",
-    mcpDir: join(dir, "mcp"), ruleText: "RULE",
+    mcpDir: join(dir, "mcp"), ruleText: "RULE", claudeProjectsDir: join(dir, "claude-projects"),
     now: () => "2026-07-21T00:00:00.000Z", genId: () => `uuid${++seq}0000`,
   });
   return { store, runner, mgr, dir };
@@ -138,4 +138,87 @@ test("openTerminal runs osascript for the session; missing -> 404", () => {
   mgr.openTerminal(e.id);
   expect(runner.calls.some((c) => c.cmd === "osascript" && c.args.join(" ").includes(e.tmuxName))).toBe(true);
   expect(() => mgr.openTerminal("nope")).toThrowError(expect.objectContaining({ status: 404 }));
+});
+
+import { writeFileSync as _wf, mkdirSync as _mk } from "node:fs";
+
+function seedClaudeSession(claudeDir: string, projectPath: string, id: string, firstUser: string): void {
+  const enc = projectPath.replace(/[/.]/g, "-");
+  const dir = join(claudeDir, enc);
+  _mk(dir, { recursive: true });
+  const lines = [
+    JSON.stringify({ type: "mode", mode: "normal", sessionId: id }),
+    JSON.stringify({ type: "user", message: { role: "user", content: firstUser } }),
+  ].join("\n");
+  _wf(join(dir, `${id}.jsonl`), lines);
+}
+
+test("discover lists sessions for a project's claude dir with id/mtime/snippet, newest first", () => {
+  const { store, mgr, dir } = setup();
+  const claudeDir = join(dir, "claude-projects");
+  // re-make mgr with claudeProjectsDir pointed at our temp claude dir
+  const mgr2 = new SessionManager({
+    store, runner: (mgr as unknown as { o: { runner: CommandRunner } }).o.runner,
+    repoRoot: "/repo", orchUrl: "http://127.0.0.1:4179", mcpDir: join(dir, "mcp"),
+    ruleText: "RULE", claudeProjectsDir: claudeDir,
+    now: () => "2026-07-21T00:00:00.000Z", genId: () => "unused",
+  });
+  seedClaudeSession(claudeDir, "/p/daggle", "11111111-aaaa", "첫 작업 요청 내용");
+  const list = mgr2.discover("daggle");
+  expect(list).toHaveLength(1);
+  expect(list[0].id).toBe("11111111-aaaa");
+  expect(list[0].snippet).toContain("첫 작업 요청");
+  expect(typeof list[0].mtime).toBe("string");
+});
+
+test("discover on unknown project throws 400; empty when no claude dir", () => {
+  const { store, mgr, dir } = setup();
+  const mgr2 = new SessionManager({
+    store, runner: (mgr as unknown as { o: { runner: CommandRunner } }).o.runner,
+    repoRoot: "/repo", orchUrl: "http://127.0.0.1:4179", mcpDir: join(dir, "mcp"),
+    ruleText: "RULE", claudeProjectsDir: join(dir, "nope-claude"),
+  });
+  expect(() => mgr2.discover("ghost")).toThrowError(expect.objectContaining({ status: 400 }));
+  expect(mgr2.discover("daggle")).toEqual([]); // dir 없음 → 빈 배열
+});
+
+test("adopt registers the given id, resumes it, running", () => {
+  const { store, dir } = setup();
+  const runner = new FakeRunner();
+  const claudeDir = join(dir, "claude-projects");
+  const mgr = new SessionManager({
+    store, runner, repoRoot: "/repo", orchUrl: "http://127.0.0.1:4179",
+    mcpDir: join(dir, "mcp"), ruleText: "RULE", claudeProjectsDir: claudeDir,
+    now: () => "2026-07-21T00:00:00.000Z",
+  });
+  seedClaudeSession(claudeDir, "/p/daggle", "22222222-bbbb", "이전 대화");
+  const e = mgr.adopt("22222222-bbbb", "daggle");
+  expect(e.id).toBe("22222222-bbbb");
+  expect(e.status).toBe("running");
+  expect(e.tmuxName).toBe("fleet__daggle__222222");
+  const call = runner.calls.find((c) => c.args[0] === "new-session")!;
+  expect(call.args).toContain("--resume");
+  expect(call.args).toContain("22222222-bbbb");
+  expect(call.args).not.toContain("--session-id");
+  expect(store.getSession("22222222-bbbb")!.status).toBe("running");
+});
+
+test("adopt: unknown project 400, missing session file 404, id already running 409, max-2 409", () => {
+  const { store, dir } = setup();
+  const runner = new FakeRunner();
+  const claudeDir = join(dir, "claude-projects");
+  const mgr = new SessionManager({
+    store, runner, repoRoot: "/repo", orchUrl: "http://127.0.0.1:4179",
+    mcpDir: join(dir, "mcp"), ruleText: "RULE", claudeProjectsDir: claudeDir,
+    now: () => "2026-07-21T00:00:00.000Z", genId: (() => { let n = 0; return () => `gen${++n}0000`; })(),
+  });
+  expect(() => mgr.adopt("x", "ghost")).toThrowError(expect.objectContaining({ status: 400 }));
+  expect(() => mgr.adopt("no-file", "daggle")).toThrowError(expect.objectContaining({ status: 404 }));
+  seedClaudeSession(claudeDir, "/p/daggle", "33333333-cccc", "hi");
+  mgr.adopt("33333333-cccc", "daggle"); // running now
+  expect(() => mgr.adopt("33333333-cccc", "daggle")).toThrowError(expect.objectContaining({ status: 409 })); // already running
+  // fill to 2 running with fresh launches, then adopt a 3rd distinct file → 409 max-2
+  seedClaudeSession(claudeDir, "/p/daggle", "44444444-dddd", "hi2");
+  mgr.launch("daggle"); // 2 running (33.. + gen1)
+  expect(() => mgr.adopt("44444444-dddd", "daggle")).toThrowError(expect.objectContaining({ status: 409 }));
 });

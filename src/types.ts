@@ -42,3 +42,9 @@ export interface ProjectEntry {
   name: string;
   path: string;
 }
+
+export interface AvailableSession {
+  id: string;
+  mtime: string; // ISO, 세션 파일 최종 수정시각
+  snippet: string; // 첫 user 메시지 일부
+}

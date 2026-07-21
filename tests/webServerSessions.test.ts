@@ -27,7 +27,8 @@ function boot() {
   let seq = 0;
   const sessions = new SessionManager({
     store, runner, repoRoot: "/repo", orchUrl: "http://127.0.0.1:4179",
-    mcpDir: join(dir, "mcp"), ruleText: "RULE", genId: () => `uuid${++seq}0000`,
+    mcpDir: join(dir, "mcp"), ruleText: "RULE", claudeProjectsDir: join(dir, "claude-projects"),
+    genId: () => `uuid${++seq}0000`,
   });
   const server = createServer(decisions, { panelToken: TOKEN, publicDir: join(dir, "public"), sessions });
   return new Promise<{ base: string; decisions: DecisionStore; sessions: SessionManager; close: () => void }>((res) => {
