@@ -24,3 +24,13 @@ test("unknown / missing args -> error", () => {
   expect(resolveCommand(["bogus"]).kind).toBe("error");
   expect(resolveCommand([]).kind).toBe("error");
 });
+test("discover <project> -> GET available", () => {
+  expect(resolveCommand(["discover", "daggle"])).toEqual({ kind: "http", method: "GET", path: "/api/projects/daggle/available", render: "available" });
+});
+test("adopt <id> <project> -> POST adopt", () => {
+  expect(resolveCommand(["adopt", "abc-123", "daggle"])).toEqual({ kind: "http", method: "POST", path: "/api/sessions/adopt", body: { id: "abc-123", project: "daggle" } });
+});
+test("discover/adopt missing args -> error", () => {
+  expect(resolveCommand(["discover"]).kind).toBe("error");
+  expect(resolveCommand(["adopt", "onlyid"]).kind).toBe("error");
+});

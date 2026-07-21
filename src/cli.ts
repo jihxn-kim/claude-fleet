@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 
 export type CliAction =
-  | { kind: "http"; method: "GET" | "POST"; path: string; body?: unknown; render?: "sessions" | "projects" }
+  | { kind: "http"; method: "GET" | "POST"; path: string; body?: unknown; render?: "sessions" | "projects" | "available" }
   | { kind: "attach-id"; id: string }
   | { kind: "error"; message: string };
 
@@ -27,6 +27,12 @@ export function resolveCommand(argv: string[]): CliAction {
         return { kind: "http", method: "POST", path: "/api/projects", body: { name: rest[1], path: rest[2] } };
       }
       return { kind: "error", message: "usage: fleet project add <name> <path>" };
+    case "discover":
+      if (!rest[0]) return { kind: "error", message: "usage: fleet discover <project>" };
+      return { kind: "http", method: "GET", path: `/api/projects/${rest[0]}/available`, render: "available" };
+    case "adopt":
+      if (!rest[0] || !rest[1]) return { kind: "error", message: "usage: fleet adopt <session-id> <project>" };
+      return { kind: "http", method: "POST", path: "/api/sessions/adopt", body: { id: rest[0], project: rest[1] } };
     default:
       return { kind: "error", message: `unknown command: ${cmd ?? "(none)"}\nfleet new|ls|resume|kill|attach|project add` };
   }
@@ -68,6 +74,11 @@ async function main(): Promise<void> {
     for (const s of data as Array<Record<string, string>>) {
       const notice = (s as any).notice ? "  ⚠️" : "";
       console.log(`${s.status === "running" ? "●" : "○"} ${s.project.padEnd(12)} ${s.tmuxName}  ${s.id}${notice}`);
+    }
+  } else if (action.render === "available" && Array.isArray(data)) {
+    if (data.length === 0) console.log("(가져올 세션 없음)");
+    for (const a of data as Array<{ id: string; mtime: string; snippet: string }>) {
+      console.log(`${a.id}  ${a.mtime.slice(0, 16).replace("T", " ")}  ${a.snippet || "(스니펫 없음)"}`);
     }
   } else {
     console.log(JSON.stringify(data, null, 2));
