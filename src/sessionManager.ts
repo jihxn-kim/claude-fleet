@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { writeFileSync, mkdirSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync, fstatSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync, fstatSync, readFileSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import type { SessionStore } from "./sessionStore.js";
 import type { SessionEntry, AvailableSession, AllSession } from "./types.js";
@@ -23,8 +23,35 @@ export interface SessionManagerOpts {
   mcpDir: string;
   ruleText: string;
   claudeProjectsDir: string;
+  configPath?: string; // where the chosen terminal app is persisted
   now?: () => string;
   genId?: () => string;
+}
+
+// Known macOS terminal apps and how to detect them. openTerminal picks the
+// user's chosen one (or the first installed) so this works on any machine.
+const TERMINALS = [
+  { id: "iterm", name: "iTerm2", app: "/Applications/iTerm.app" },
+  { id: "terminal", name: "Terminal", app: "/System/Applications/Utilities/Terminal.app" },
+  { id: "warp", name: "Warp", app: "/Applications/Warp.app" },
+  { id: "ghostty", name: "Ghostty", app: "/Applications/Ghostty.app" },
+  { id: "wezterm", name: "WezTerm", app: "/Applications/WezTerm.app" },
+  { id: "alacritty", name: "Alacritty", app: "/Applications/Alacritty.app" },
+  { id: "kitty", name: "kitty", app: "/Applications/kitty.app" },
+  { id: "hyper", name: "Hyper", app: "/Applications/Hyper.app" },
+];
+
+function readConfig(path: string | undefined): { terminal?: string } {
+  if (!path) return {};
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as { terminal?: string };
+  } catch {
+    return {};
+  }
+}
+function writeConfig(path: string, cfg: unknown): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(cfg, null, 2));
 }
 
 function slug(s: string): string {
@@ -199,12 +226,44 @@ export class SessionManager {
     return this.o.store.setStatus(id, "stopped")!;
   }
 
+  // Terminal apps installed on this machine.
+  detectTerminals(): Array<{ id: string; name: string }> {
+    return TERMINALS.filter((t) => existsSync(t.app)).map((t) => ({ id: t.id, name: t.name }));
+  }
+
+  // The chosen terminal (persisted), else the first installed (iTerm preferred
+  // by TERMINALS order), else "terminal".
+  getTerminal(): string {
+    const detected = this.detectTerminals();
+    const chosen = readConfig(this.o.configPath).terminal;
+    if (chosen && detected.some((t) => t.id === chosen)) return chosen;
+    return detected[0]?.id ?? "terminal";
+  }
+
+  setTerminal(id: string): void {
+    if (this.o.configPath) writeConfig(this.o.configPath, { ...readConfig(this.o.configPath), terminal: id });
+  }
+
   openTerminal(id: string): void {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
-    this.o.runner.run("osascript", [
-      "-e", `tell application "Terminal" to do script "tmux attach -t ${s.tmuxName}"`,
-    ]);
+    const attach = `tmux attach -t ${s.tmuxName}`; // tmuxName is slug-safe, no injection
+    const term = this.getTerminal();
+    if (term === "iterm") {
+      this.o.runner.run("osascript", [
+        "-e", `tell application "iTerm" to create window with default profile`,
+        "-e", `tell application "iTerm" to tell current session of current window to write text "${attach}"`,
+      ]);
+    } else if (term === "terminal") {
+      this.o.runner.run("osascript", ["-e", `tell application "Terminal" to do script "${attach}"`]);
+    } else {
+      // generic: a .command script opened with the chosen app
+      const app = TERMINALS.find((t) => t.id === term)?.app;
+      const scriptPath = join(this.o.mcpDir, `attach-${s.id.slice(0, 6)}.command`);
+      mkdirSync(dirname(scriptPath), { recursive: true });
+      writeFileSync(scriptPath, `#!/bin/bash\n${attach}\n`, { mode: 0o755 });
+      this.o.runner.run("open", app ? ["-a", app, scriptPath] : [scriptPath]);
+    }
   }
 
   reconcile(): void {

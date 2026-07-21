@@ -129,6 +129,16 @@ export function createServer(
             return sendHttpError(res, e);
           }
         }
+        if (path === "/api/terminals" && method === "GET") {
+          if (!sessions) return send(res, 404, { error: "sessions disabled" });
+          return send(res, 200, { detected: sessions.detectTerminals(), current: sessions.getTerminal() });
+        }
+        if (path === "/api/terminal" && method === "POST") {
+          if (!sessions) return send(res, 404, { error: "sessions disabled" });
+          const { terminal } = (await readJson(req)) as { terminal: string };
+          sessions.setTerminal(terminal);
+          return send(res, 200, { ok: true });
+        }
         if (path === "/api/sessions/adopt" && method === "POST") {
           if (!sessions) return send(res, 404, { error: "sessions disabled" });
           try {

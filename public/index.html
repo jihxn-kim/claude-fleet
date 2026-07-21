@@ -48,6 +48,8 @@
   #allsessions { max-width: 620px; margin: 12px auto 0; }
   .lbl2 { font-size: 12px; color: #8a929b; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px; }
   .a-run { color: #7ee2a8; }
+  #settings { max-width: 620px; margin: 18px auto; }
+  #settings select { background: #1e2228; color: #e8eaed; border: 1px solid #2b3038; border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -61,6 +63,7 @@
   <div id="addmsg" class="addmsg"></div>
 </div>
 <div id="sessions" class="sessions"></div>
+<div id="settings"></div>
 <script>
   const token = new URLSearchParams(location.search).get("token") || "";
   const q = (s) => `${s}${s.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
@@ -203,10 +206,25 @@
   }
   document.getElementById("paddbtn").addEventListener("click", addProject);
 
+  async function loadTerminals() {
+    try {
+      const { detected, current } = await fetch(q("/api/terminals")).then((r) => r.json());
+      const el = document.getElementById("settings");
+      if (!detected || !detected.length) { el.innerHTML = ""; return; }
+      el.innerHTML = `<span class="lbl2">"맥에서 열기" 터미널: </span><select id="termsel">`
+        + detected.map((t) => `<option value="${esc(t.id)}"${t.id === current ? " selected" : ""}>${esc(t.name)}</option>`).join("")
+        + `</select>`;
+      document.getElementById("termsel").addEventListener("change", (e) => {
+        fetch(q("/api/terminal"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ terminal: e.target.value }) });
+      });
+    } catch (e) { /* ignore */ }
+  }
+
   poll();
   pollSessions();
   renderAll();
   pollAll();
+  loadTerminals();
 </script>
 </body>
 </html>

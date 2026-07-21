@@ -27,6 +27,7 @@ const sessions = new SessionManager({
   mcpDir: join(CONFIG.dataDir, "mcp"),
   ruleText: readFileSync(join(repoRoot, "fleet-rule.txt"), "utf8"),
   claudeProjectsDir: join(homedir(), ".claude", "projects"),
+  configPath: join(CONFIG.dataDir, "config.json"),
 });
 
 const publicDir = join(repoRoot, "public");
