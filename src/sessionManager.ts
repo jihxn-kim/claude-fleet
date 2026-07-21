@@ -122,17 +122,22 @@ function hasConversation(file: string): boolean {
 
 // The real working directory a session ran in, from the session file itself
 // (folder-name encoding is lossy, but records carry an exact "cwd").
-function sessionCwd(file: string): string | null {
-  for (const line of readChunk(file, false, PREVIEW_HEAD).split("\n")) {
+function findCwdInChunk(chunk: string): string | null {
+  for (const line of chunk.split("\n")) {
     if (!line.includes('"cwd"')) continue;
     try {
       const e = JSON.parse(line) as { cwd?: unknown };
       if (typeof e.cwd === "string" && e.cwd) return e.cwd;
     } catch {
-      /* skip non-json */
+      /* skip non-json / truncated line */
     }
   }
   return null;
+}
+function sessionCwd(file: string): string | null {
+  // Head first; if a resumed session's giant continuation-summary pushed the
+  // first cwd record past the head window, recent (tail) records carry it too.
+  return findCwdInChunk(readChunk(file, false, PREVIEW_HEAD)) ?? findCwdInChunk(readChunk(file, true, PREVIEW_TAIL));
 }
 
 export class SessionManager {
