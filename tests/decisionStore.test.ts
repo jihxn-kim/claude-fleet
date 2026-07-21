@@ -1,4 +1,4 @@
-import { expect, test, beforeEach } from "vitest";
+import { expect, test } from "vitest";
 import { mkdtempSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,7 +23,7 @@ test("create then list shows the pending decision without resolve()", () => {
   expect(list).toHaveLength(1);
   expect(list[0].id).toBe(id);
   expect(list[0].sessionToken).toBe("session-1");
-  expect((list[0] as Record<string, unknown>).resolve).toBeUndefined();
+  expect((list[0] as unknown as Record<string, unknown>).resolve).toBeUndefined();
 });
 
 test("answer resolves the pending promise and removes it from list", async () => {
@@ -50,4 +50,21 @@ test("answer appends a history line", () => {
   expect(line.id).toBe(id);
   expect(line.answer).toEqual({ choice: 2 });
   expect(line.answeredAt).toBe("2026-07-21T00:00:00.000Z");
+});
+
+test("abort removes the pending decision and rejects its promise", async () => {
+  const { store } = newStore();
+  const { id, answer } = store.create("session-1", REQ);
+  expect(store.abort(id)).toBe(true);
+  await expect(answer).rejects.toThrow(/aborted/);
+  expect(store.list()).toHaveLength(0);
+  expect(store.abort(id)).toBe(false); // already gone
+});
+
+test("list() leaks neither resolve nor reject", () => {
+  const { store } = newStore();
+  store.create("session-1", REQ);
+  const v = store.list()[0] as unknown as Record<string, unknown>;
+  expect(v.resolve).toBeUndefined();
+  expect(v.reject).toBeUndefined();
 });

@@ -82,3 +82,39 @@ test("answering unknown id is 404", async () => {
   expect(r.status).toBe(404);
   close();
 });
+
+test("session disconnect drops the pending decision and server stays up", async () => {
+  const { base, close } = await boot();
+  const ctrl = new AbortController();
+  const inflight = fetch(`${base}/internal/decisions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-fleet-session": "s" },
+    body: JSON.stringify(REQ),
+    signal: ctrl.signal,
+  }).catch(() => "aborted");
+
+  // wait until the decision is queued
+  let pending: Array<{ id: string }> = [];
+  for (let i = 0; i < 50 && pending.length === 0; i++) {
+    pending = await (await fetch(`${base}/api/decisions?token=${TOKEN}`)).json();
+    if (pending.length === 0) await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(pending).toHaveLength(1);
+
+  // session disconnects before answering
+  ctrl.abort();
+  await inflight;
+
+  // the pending decision drains
+  let after: Array<{ id: string }> = [{ id: "x" }];
+  for (let i = 0; i < 50 && after.length > 0; i++) {
+    after = await (await fetch(`${base}/api/decisions?token=${TOKEN}`)).json();
+    if (after.length > 0) await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(after).toHaveLength(0);
+
+  // server is still alive
+  const r = await fetch(`${base}/api/decisions?token=${TOKEN}`);
+  expect(r.status).toBe(200);
+  close();
+});

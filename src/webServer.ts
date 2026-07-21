@@ -37,9 +37,18 @@ export function createServer(
       if (path === "/internal/decisions" && method === "POST") {
         const sessionToken = String(req.headers["x-fleet-session"] ?? "session-1");
         const request = (await readJson(req)) as DecisionRequest;
-        const { answer } = store.create(sessionToken, request);
-        const result = await answer; // 패널이 답할 때까지 보류
-        return send(res, 200, result);
+        const { id, answer } = store.create(sessionToken, request);
+        // If the session disconnects before answering, drop the pending decision
+        // so its card can't linger or be answered into a dead socket.
+        res.on("close", () => store.abort(id));
+        try {
+          const result = await answer; // 패널이 답할 때까지 보류
+          if (!res.writableEnded && !res.destroyed) return send(res, 200, result);
+          return;
+        } catch {
+          // aborted: the session disconnected before answering — nothing to send
+          return;
+        }
       }
 
       // --- 패널 API: 토큰 가드 ---

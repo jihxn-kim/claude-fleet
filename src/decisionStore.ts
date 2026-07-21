@@ -8,6 +8,7 @@ interface Pending {
   request: DecisionRequest;
   createdAt: string;
   resolve: (a: DecisionAnswer) => void;
+  reject: (e: unknown) => void;
 }
 
 export class DecisionStore {
@@ -22,13 +23,17 @@ export class DecisionStore {
   create(sessionToken: string, request: DecisionRequest): { id: string; answer: Promise<DecisionAnswer> } {
     const id = `d${++this.seq}`;
     let resolve!: (a: DecisionAnswer) => void;
-    const answer = new Promise<DecisionAnswer>((r) => (resolve = r));
-    this.pending.set(id, { id, sessionToken, request, createdAt: this.now(), resolve });
+    let reject!: (e: unknown) => void;
+    const answer = new Promise<DecisionAnswer>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    this.pending.set(id, { id, sessionToken, request, createdAt: this.now(), resolve, reject });
     return { id, answer };
   }
 
   list(): PendingDecisionView[] {
-    return [...this.pending.values()].map(({ resolve: _resolve, ...view }) => view);
+    return [...this.pending.values()].map(({ resolve: _resolve, reject: _reject, ...view }) => view);
   }
 
   answer(id: string, ans: DecisionAnswer): boolean {
@@ -37,6 +42,17 @@ export class DecisionStore {
     this.pending.delete(id);
     this.appendHistory(pd, ans);
     pd.resolve(ans);
+    return true;
+  }
+
+  /** Drop a still-pending decision without writing history (e.g. the requesting
+   *  session disconnected before answering); rejects its promise so any awaiter
+   *  unwinds. Returns false if it was already answered or removed. */
+  abort(id: string): boolean {
+    const pd = this.pending.get(id);
+    if (!pd) return false;
+    this.pending.delete(id);
+    pd.reject(new Error("decision aborted"));
     return true;
   }
 
