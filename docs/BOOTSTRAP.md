@@ -42,7 +42,7 @@ claude --permission-mode acceptEdits \
 
 ### fleet CLI 별칭 (1회)
 ```bash
-alias fleet='FLEET_PANEL_TOKEN=원하는-긴-토큰 tsx /Users/kimjihun/Desktop/claude-fleet/src/cli.ts'
+alias fleet='FLEET_PANEL_TOKEN=원하는-긴-토큰 /Users/kimjihun/Desktop/claude-fleet/node_modules/.bin/tsx /Users/kimjihun/Desktop/claude-fleet/src/cli.ts'
 ```
 (오케스트레이터를 같은 `FLEET_PANEL_TOKEN`으로 `npm start` 해둔다.)
 
