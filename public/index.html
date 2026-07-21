@@ -31,10 +31,22 @@
   .srow .badge { color: #f5a623; font-size: 12px; }
   .newbtn { background: #1e2f22 !important; color: #7ee2a8 !important; }
   .card .who { font-size: 12px; color: #7ee2a8; margin: -8px 0 12px; }
+  .addproj { max-width: 620px; margin: 8px auto 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .addproj .lbl { flex: 1 1 100%; font-size: 12px; color: #8a929b; text-transform: uppercase; letter-spacing: .06em; }
+  .addproj input { flex: 1 1 100%; background: #1e2228; border: 1px solid #2b3038; border-radius: 10px; color: #e8eaed; padding: 10px; font: inherit; font-size: 14px; }
+  .addproj button { border: 0; border-radius: 10px; background: #1e2f22; color: #7ee2a8; padding: 10px 14px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .addproj .addmsg { flex: 1 1 100%; font-size: 12px; color: #8a929b; min-height: 14px; }
 </style>
 </head>
 <body>
 <div id="root"><div class="empty">대기 중인 결정이 없어요</div></div>
+<div id="addproj" class="addproj">
+  <div class="lbl">프로젝트 추가</div>
+  <input id="pname" placeholder="이름 (예: daggle)" autocapitalize="off" autocorrect="off" spellcheck="false" />
+  <input id="ppath" placeholder="repo 절대경로 (예: /Users/kimjihun/work/daggle)" autocapitalize="off" autocorrect="off" spellcheck="false" />
+  <button id="paddbtn">+ 추가</button>
+  <div id="addmsg" class="addmsg"></div>
+</div>
 <div id="sessions" class="sessions"></div>
 <script>
   const token = new URLSearchParams(location.search).get("token") || "";
@@ -120,6 +132,29 @@
     else if (d.act === "open") await fetch(q(`/api/sessions/${d.id}/open-terminal`), { method: "POST" });
     pollSessions();
   }
+
+  async function addProject() {
+    const name = document.getElementById("pname").value.trim();
+    const path = document.getElementById("ppath").value.trim();
+    const msg = document.getElementById("addmsg");
+    if (!name || !path) { msg.textContent = "이름과 절대경로를 둘 다 입력해줘"; return; }
+    try {
+      const res = await fetch(q("/api/projects"), {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, path }),
+      });
+      if (res.ok) {
+        msg.textContent = `추가됨: ${name} — 아래 목록에서 "+ 새 세션" 눌러`;
+        document.getElementById("pname").value = "";
+        document.getElementById("ppath").value = "";
+        pollSessions();
+      } else {
+        msg.textContent = "추가 실패 (토큰/서버 확인)";
+      }
+    } catch (e) {
+      msg.textContent = "네트워크 오류";
+    }
+  }
+  document.getElementById("paddbtn").addEventListener("click", addProject);
 
   poll();
   pollSessions();
