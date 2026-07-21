@@ -67,6 +67,8 @@
   let currentId = null;
   let expandedProj = null;
   const availCache = {};
+  let showAll = false;
+  let allCache = [];
 
   async function poll() {
     try {
@@ -169,23 +171,34 @@
       if (d.running === "1" && !confirm("이 세션 지금 실행 중이에요.\n원래 터미널을 먼저 닫았나요? 안 닫으면 충돌해요.")) return;
       await fetch(q("/api/sessions/adopt"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: d.id, projectPath: d.path }) });
     }
+    else if (d.act === "show-all") { showAll = true; await loadAll(); }
+    else if (d.act === "hide-all") { showAll = false; }
     pollSessions();
+    renderAll();
   }
 
-  async function pollAll() {
+  async function loadAll() {
     try {
       const list = await fetch(q("/api/all-sessions")).then((r) => r.json());
-      renderAll(Array.isArray(list) ? list : []);
-    } catch (e) { /* retry next tick */ }
+      allCache = Array.isArray(list) ? list : [];
+    } catch (e) { /* keep last cache */ }
+  }
+  async function pollAll() {
+    if (showAll) { await loadAll(); renderAll(); } // only refresh while open
     setTimeout(pollAll, 5000);
   }
-  function renderAll(list) {
+  function renderAll() {
     const el = document.getElementById("allsessions");
-    if (!list.length) { el.innerHTML = ""; return; }
-    el.innerHTML = `<div class="lbl2">내 세션 (최근 · 🟢=실행 중)</div>`
-      + `<div class="a-hint">⚠️ 실행 중(🟢) 세션은 원래 터미널을 먼저 닫고 가져와요(안 그러면 충돌).</div>`
-      + list.map((s) =>
-        `<div class="a-row"><div class="a-meta"><div class="a-snip">${s.running ? '<span class="a-run">🟢</span> ' : ""}${esc(s.snippet || "(미리보기 없음)")}</div><div class="a-sub">${esc(s.projectName)} · ${esc((s.mtime || "").slice(5, 16).replace("T", " "))}</div></div><button data-act="adopt-path" data-id="${esc(s.id)}" data-path="${esc(s.projectPath)}" data-running="${s.running ? "1" : "0"}">가져오기</button></div>`).join("");
+    if (!showAll) {
+      el.innerHTML = `<div class="srow"><button class="discbtn" data-act="show-all">＋ 기존 세션 가져오기 (모든 프로젝트)</button></div>`;
+    } else {
+      el.innerHTML = `<div class="lbl2">내 세션 (최근 · 🟢=실행 중)</div>`
+        + `<div class="a-hint">⚠️ 실행 중(🟢) 세션은 원래 터미널을 먼저 닫고 가져와요(안 그러면 충돌).</div>`
+        + (allCache.length ? allCache.map((s) =>
+            `<div class="a-row"><div class="a-meta"><div class="a-snip">${s.running ? '<span class="a-run">🟢</span> ' : ""}${esc(s.snippet || "(미리보기 없음)")}</div><div class="a-sub">${esc(s.projectName)} · ${esc((s.mtime || "").slice(5, 16).replace("T", " "))}</div></div><button data-act="adopt-path" data-id="${esc(s.id)}" data-path="${esc(s.projectPath)}" data-running="${s.running ? "1" : "0"}">가져오기</button></div>`).join("")
+           : `<div class="a-hint">불러오는 중…</div>`)
+        + `<div class="srow"><button class="discbtn" data-act="hide-all">닫기</button></div>`;
+    }
     el.querySelectorAll("button[data-act]").forEach((b) => b.addEventListener("click", () => sessionAction(b.dataset)));
   }
 
@@ -214,6 +227,7 @@
 
   poll();
   pollSessions();
+  renderAll();
   pollAll();
 </script>
 </body>
