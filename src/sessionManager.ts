@@ -110,10 +110,14 @@ function sessionPreview(file: string): string {
   return "";
 }
 
-// A real conversation always has at least one assistant turn near the top.
-// A stub session (claude opened but never used) has none — hide those.
+// A real conversation has assistant turns; a stub (claude opened but never
+// used) has none. Check head AND tail — a resumed session's head can be one
+// giant continuation-summary with the first assistant turn far below it.
 function hasConversation(file: string): boolean {
-  return readChunk(file, false, PREVIEW_HEAD).includes('"type":"assistant"');
+  return (
+    readChunk(file, false, PREVIEW_HEAD).includes('"type":"assistant"') ||
+    readChunk(file, true, PREVIEW_TAIL).includes('"type":"assistant"')
+  );
 }
 
 export class SessionManager {
