@@ -65,6 +65,7 @@ export class SessionManager {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
     if (s.status === "running") throw new HttpError(409, `session ${id} already running`);
+    if (this.o.store.runningCount(s.project) >= 2) throw new HttpError(409, `max 2 running for ${s.project}`);
     const mcpPath = this.writeMcpConfig(id);
     this.o.runner.run("tmux", [
       "new-session", "-d", "-s", s.tmuxName, "-c", s.projectPath,

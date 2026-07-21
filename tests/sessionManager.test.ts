@@ -104,6 +104,15 @@ test("resume: stopped -> new-session with --resume, running; running -> 409", ()
   expect(() => mgr.resume("nope")).toThrowError(expect.objectContaining({ status: 404 }));
 });
 
+test("resume rejected with 409 when project already has 2 running", () => {
+  const { mgr } = setup();
+  const a = mgr.launch("daggle");
+  mgr.launch("daggle");   // 2 running
+  mgr.close(a.id);        // a stopped; 1 running
+  mgr.launch("daggle");   // 2 running again (a still stopped)
+  expect(() => mgr.resume(a.id)).toThrowError(expect.objectContaining({ status: 409 }));
+});
+
 test("reconcile: running sessions absent from tmux list become stopped", () => {
   const { store, runner, mgr } = setup();
   const a = mgr.launch("daggle");
