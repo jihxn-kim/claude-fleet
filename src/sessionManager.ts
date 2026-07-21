@@ -35,14 +35,16 @@ function encodeProjectDir(path: string): string {
   return path.replace(/[/.]/g, "-");
 }
 
-// Read up to 64KB from either the start or the end of a file (bounded so
-// multi-hundred-MB session files never get fully loaded).
+// Read up to 256KB from either the start or the end of a file (bounded so
+// multi-hundred-MB session files never get fully loaded; agentic sessions
+// put many tool turns between user messages, so a wider window finds one).
+const PREVIEW_BYTES = 262144;
 function readChunk(file: string, fromEnd: boolean): string {
   try {
     const fd = openSync(file, "r");
     try {
       const size = fstatSync(fd).size;
-      const len = Math.min(65536, size);
+      const len = Math.min(PREVIEW_BYTES, size);
       const pos = fromEnd ? size - len : 0;
       const buf = Buffer.alloc(len);
       const n = readSync(fd, buf, 0, len, pos);
