@@ -112,6 +112,24 @@ export function createServer(
             return sendHttpError(res, e);
           }
         }
+        const avail = path.match(/^\/api\/projects\/([^/]+)\/available$/);
+        if (avail && method === "GET") {
+          if (!sessions) return send(res, 404, { error: "sessions disabled" });
+          try {
+            return send(res, 200, sessions.discover(decodeURIComponent(avail[1])));
+          } catch (e) {
+            return sendHttpError(res, e);
+          }
+        }
+        if (path === "/api/sessions/adopt" && method === "POST") {
+          if (!sessions) return send(res, 404, { error: "sessions disabled" });
+          try {
+            const { id, project } = (await readJson(req)) as { id: string; project: string };
+            return send(res, 201, sessions.adopt(id, project));
+          } catch (e) {
+            return sendHttpError(res, e);
+          }
+        }
         const sm = path.match(/^\/api\/sessions\/([^/]+)\/(resume|close|open-terminal)$/);
         if (sm && method === "POST") {
           if (!sessions) return send(res, 404, { error: "sessions disabled" });

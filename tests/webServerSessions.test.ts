@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -31,10 +31,10 @@ function boot() {
     genId: () => `uuid${++seq}0000`,
   });
   const server = createServer(decisions, { panelToken: TOKEN, publicDir: join(dir, "public"), sessions });
-  return new Promise<{ base: string; decisions: DecisionStore; sessions: SessionManager; close: () => void }>((res) => {
+  return new Promise<{ base: string; dir: string; decisions: DecisionStore; sessions: SessionManager; close: () => void }>((res) => {
     server.listen(0, "127.0.0.1", () => {
       const { port } = server.address() as AddressInfo;
-      res({ base: `http://127.0.0.1:${port}`, decisions, sessions, close: () => server.close() });
+      res({ base: `http://127.0.0.1:${port}`, dir, decisions, sessions, close: () => server.close() });
     });
   });
 }
@@ -97,4 +97,43 @@ test("GET /api/decisions enriches with session {project,tmuxName}; /internal/not
   decisions.answer(pend[0].id, { choice: 1 });
   close();
   void sessions;
+});
+
+function seedSession(dir: string, projectPath: string, id: string, firstUser: string): void {
+  const enc = projectPath.replace(/[/.]/g, "-");
+  const d = join(dir, "claude-projects", enc);
+  mkdirSync(d, { recursive: true });
+  writeFileSync(join(d, `${id}.jsonl`), JSON.stringify({ type: "user", message: { role: "user", content: firstUser } }));
+}
+
+test("GET /api/projects/:name/available lists discoverable sessions; adopt registers one", async () => {
+  const { base, dir, close } = await boot();
+  // daggle project registered at /p/daggle in boot(); seed a claude session there
+  seedSession(dir, "/p/daggle", "aaaa1111-2222", "이전에 하던 작업");
+  const avail = await (await fetch(q(base, "/api/projects/daggle/available"))).json();
+  expect(avail).toHaveLength(1);
+  expect(avail[0].id).toBe("aaaa1111-2222");
+
+  const adopted = await fetch(q(base, "/api/sessions/adopt"), {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: "aaaa1111-2222", project: "daggle" }),
+  });
+  expect(adopted.status).toBe(201);
+  const body = await adopted.json();
+  expect(body.id).toBe("aaaa1111-2222");
+  expect(body.status).toBe("running");
+
+  const list = await (await fetch(q(base, "/api/sessions"))).json();
+  expect(list.some((s: { id: string }) => s.id === "aaaa1111-2222")).toBe(true);
+  close();
+});
+
+test("adopt with missing session file → 404", async () => {
+  const { base, close } = await boot();
+  const r = await fetch(q(base, "/api/sessions/adopt"), {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: "nope", project: "daggle" }),
+  });
+  expect(r.status).toBe(404);
+  close();
 });
