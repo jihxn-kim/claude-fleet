@@ -2,6 +2,8 @@ import { createServer as httpCreate, type IncomingMessage, type ServerResponse, 
 import { readFile } from "node:fs/promises";
 import { join, normalize } from "node:path";
 import type { DecisionStore } from "./decisionStore.js";
+import type { SessionManager } from "./sessionManager.js";
+import { HttpError } from "./sessionManager.js";
 import type { DecisionRequest, DecisionAnswer } from "./types.js";
 
 function send(res: ServerResponse, status: number, body: unknown, type = "application/json"): void {
@@ -25,50 +27,102 @@ const CONTENT_TYPES: Record<string, string> = {
 
 export function createServer(
   store: DecisionStore,
-  opts: { panelToken: string; publicDir: string },
+  opts: { panelToken: string; publicDir: string; sessions?: SessionManager },
 ): Server {
+  const sessions = opts.sessions;
+  const notices = new Map<string, { message: string; at: string }>();
+
+  function enrichDecisions(): unknown[] {
+    const list = store.list();
+    if (!sessions) return list;
+    return list.map((d) => {
+      const s = sessions.store.getSession(d.sessionToken);
+      return { ...d, session: s ? { project: s.project, tmuxName: s.tmuxName } : null };
+    });
+  }
+  function enrichSessions(): unknown[] {
+    if (!sessions) return [];
+    return sessions.store.listSessions().map((s) => ({ ...s, notice: notices.get(s.id) ?? null }));
+  }
+  function sendHttpError(res: ServerResponse, err: unknown): void {
+    if (err instanceof HttpError) send(res, err.status, { error: err.message });
+    else send(res, 500, { error: String(err) });
+  }
+
   return httpCreate(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
       const path = url.pathname;
       const method = req.method ?? "GET";
 
-      // --- 세션용 내부 엔드포인트: 롱폴링 ---
       if (path === "/internal/decisions" && method === "POST") {
         const sessionToken = String(req.headers["x-fleet-session"] ?? "session-1");
         const request = (await readJson(req)) as DecisionRequest;
         const { id, answer } = store.create(sessionToken, request);
-        // If the session disconnects before answering, drop the pending decision
-        // so its card can't linger or be answered into a dead socket.
+        notices.delete(sessionToken); // session is actively asking → not "stuck"
         res.on("close", () => store.abort(id));
         try {
-          const result = await answer; // 패널이 답할 때까지 보류
+          const result = await answer;
           if (!res.writableEnded && !res.destroyed) return send(res, 200, result);
           return;
         } catch {
-          // aborted: the session disconnected before answering — nothing to send
           return;
         }
       }
 
-      // --- 패널 API: 토큰 가드 ---
+      if (path === "/internal/notify" && method === "POST") {
+        const body = (await readJson(req)) as { sessionId: string; message: string };
+        notices.set(body.sessionId, { message: body.message, at: new Date().toISOString() });
+        return send(res, 200, { ok: true });
+      }
+
       if (path.startsWith("/api/")) {
         const token = url.searchParams.get("token") ?? req.headers["x-fleet-token"];
         if (token !== opts.panelToken) return send(res, 401, { error: "bad token" });
 
-        if (path === "/api/decisions" && method === "GET") {
-          return send(res, 200, store.list());
-        }
-        const m = path.match(/^\/api\/decisions\/([^/]+)\/answer$/);
-        if (m && method === "POST") {
+        if (path === "/api/decisions" && method === "GET") return send(res, 200, enrichDecisions());
+        const am = path.match(/^\/api\/decisions\/([^/]+)\/answer$/);
+        if (am && method === "POST") {
           const ans = (await readJson(req)) as DecisionAnswer;
-          const ok = store.answer(m[1], ans);
+          const ok = store.answer(am[1], ans);
           return send(res, ok ? 200 : 404, { ok });
         }
+
+        if (path === "/api/projects" && method === "GET") return send(res, 200, sessions?.store.listProjects() ?? []);
+        if (path === "/api/projects" && method === "POST") {
+          if (!sessions) return send(res, 404, { error: "sessions disabled" });
+          const { name, path: p } = (await readJson(req)) as { name: string; path: string };
+          sessions.store.addProject(name, p);
+          return send(res, 200, { ok: true });
+        }
+        if (path === "/api/sessions" && method === "GET") return send(res, 200, enrichSessions());
+        if (path === "/api/sessions" && method === "POST") {
+          if (!sessions) return send(res, 404, { error: "sessions disabled" });
+          try {
+            const { project } = (await readJson(req)) as { project: string };
+            return send(res, 201, sessions.launch(project));
+          } catch (e) {
+            return sendHttpError(res, e);
+          }
+        }
+        const sm = path.match(/^\/api\/sessions\/([^/]+)\/(resume|close|open-terminal)$/);
+        if (sm && method === "POST") {
+          if (!sessions) return send(res, 404, { error: "sessions disabled" });
+          try {
+            const id = sm[1];
+            if (sm[2] === "resume") return send(res, 200, sessions.resume(id));
+            if (sm[2] === "close") return send(res, 200, sessions.close(id));
+            sessions.openTerminal(id);
+            return send(res, 200, { ok: true });
+          } catch (e) {
+            return sendHttpError(res, e);
+          }
+        }
+
         return send(res, 404, { error: "not found" });
       }
 
-      // --- 정적 패널 ---
+      // --- 정적 패널 (Phase 1과 동일) ---
       if (method === "GET") {
         const rel = path === "/" ? "index.html" : path.replace(/^\/+/, "");
         const safe = normalize(rel).replace(/^(\.\.[/\\])+/, "");
