@@ -256,7 +256,7 @@ export class SessionManager {
   // Permission mode new sessions launch with. Default acceptEdits (edits auto,
   // risky tools still ask). bypassPermissions = fully autonomous.
   getPermissionMode(): string {
-    return readConfig(this.o.configPath).permissionMode ?? "acceptEdits";
+    return readConfig(this.o.configPath).permissionMode ?? "auto";
   }
 
   setPermissionMode(mode: string): void {

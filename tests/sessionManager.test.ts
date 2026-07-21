@@ -48,7 +48,7 @@ test("launch: writes mcp config, runs tmux new-session with claude --session-id,
   expect(call.args).toEqual([
     "new-session", "-d", "-s", "fleet__myapp__uuid10", "-c", "/p/myapp",
     "claude", "--session-id", e.id,
-    "--permission-mode", "acceptEdits",
+    "--permission-mode", "auto",
     "--append-system-prompt", "RULE",
     "--mcp-config", cfgPath,
     "--strict-mcp-config",

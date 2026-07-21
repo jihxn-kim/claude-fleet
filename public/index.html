@@ -208,9 +208,11 @@
   document.getElementById("paddbtn").addEventListener("click", addProject);
 
   const PERM_MODES = [
-    { id: "acceptEdits", name: "편집만 자동 (기본)" },
+    { id: "auto", name: "자동 (권장 · 안전한 건 알아서)" },
+    { id: "acceptEdits", name: "편집만 자동" },
     { id: "bypassPermissions", name: "전부 자동 (무인)" },
-    { id: "default", name: "매번 물어봄" },
+    { id: "manual", name: "매번 물어봄" },
+    { id: "plan", name: "계획만 (실행 안 함)" },
   ];
   async function loadTerminals() {
     try {
