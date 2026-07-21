@@ -20,10 +20,22 @@
   .opt .lab { display: block; font-size: 12px; font-weight: 500; opacity: .7; margin-top: 6px; }
   textarea { width: 100%; background: #1e2228; border: 1px solid #2b3038; border-radius: 12px; color: #e8eaed; padding: 12px; font: inherit; min-height: 64px; }
   .send { margin-top: 10px; width: 100%; border: 0; border-radius: 12px; background: #d2603a; color: #fff; font-size: 16px; font-weight: 700; padding: 14px; cursor: pointer; }
+  .sessions { max-width: 620px; margin: 16px auto 0; }
+  .proj { margin-bottom: 14px; }
+  .proj h3 { font-size: 13px; color: #8a929b; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .06em; }
+  .srow { display: flex; align-items: center; gap: 8px; background: #16191d; border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; }
+  .srow .dot { font-size: 10px; }
+  .srow .name { flex: 1; font-size: 13px; color: #c7ccd1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .srow button { border: 0; border-radius: 8px; background: #23272e; color: #e8eaed; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+  .srow button.kill { background: #3a1e1e; color: #f0a; }
+  .srow .badge { color: #f5a623; font-size: 12px; }
+  .newbtn { background: #1e2f22 !important; color: #7ee2a8 !important; }
+  .card .who { font-size: 12px; color: #7ee2a8; margin: -8px 0 12px; }
 </style>
 </head>
 <body>
 <div id="root"><div class="empty">대기 중인 결정이 없어요</div></div>
+<div id="sessions" class="sessions"></div>
 <script>
   const token = new URLSearchParams(location.search).get("token") || "";
   const q = (s) => `${s}${s.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
@@ -50,6 +62,7 @@
     root.innerHTML = `
       <div class="card">
         <p class="title">${esc(r.title)}</p>
+        ${item.session ? `<p class="who">▸ ${esc(item.session.project)} · ${esc(item.session.tmuxName)}</p>` : ""}
         <div class="sec-label">지금 왜?</div><p class="sec">${esc(r.why_now)}</p>
         <div class="sec-label">THE PAYOFF</div><p class="sec payoff">${esc(r.payoff)}</p>
         <div class="sec-label">트레이드오프</div><p class="sec">${esc(r.tradeoff)}</p>
@@ -75,7 +88,41 @@
     document.getElementById("root").innerHTML = '<div class="empty">보냈어요 ✓</div>';
   }
 
+  async function pollSessions() {
+    try {
+      const [projects, sessions] = await Promise.all([
+        fetch(q("/api/projects")).then((r) => r.json()),
+        fetch(q("/api/sessions")).then((r) => r.json()),
+      ]);
+      renderSessions(projects, sessions);
+    } catch (e) { /* retry next tick */ }
+    setTimeout(pollSessions, 2000);
+  }
+  function renderSessions(projects, sessions) {
+    const el = document.getElementById("sessions");
+    el.innerHTML = projects.map((p) => {
+      const rows = sessions.filter((s) => s.project === p.name).map((s) => {
+        const running = s.status === "running";
+        const badge = s.notice ? `<span class="badge" title="${esc(s.notice.message)}">⚠️</span>` : "";
+        const btns = running
+          ? `<button data-act="open" data-id="${esc(s.id)}">맥에서 열기</button><button class="kill" data-act="close" data-id="${esc(s.id)}">닫기</button>`
+          : `<button data-act="resume" data-id="${esc(s.id)}">resume</button>`;
+        return `<div class="srow"><span class="dot">${running ? "🟢" : "⚪️"}</span><span class="name">${esc(s.tmuxName)}</span>${badge}${btns}</div>`;
+      }).join("");
+      return `<div class="proj"><h3>${esc(p.name)}</h3>${rows}<div class="srow"><button class="newbtn" data-act="new" data-proj="${esc(p.name)}">+ 새 세션</button></div></div>`;
+    }).join("");
+    el.querySelectorAll("button[data-act]").forEach((b) => b.addEventListener("click", () => sessionAction(b.dataset)));
+  }
+  async function sessionAction(d) {
+    if (d.act === "new") await fetch(q("/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: d.proj }) });
+    else if (d.act === "resume") await fetch(q(`/api/sessions/${d.id}/resume`), { method: "POST" });
+    else if (d.act === "close") await fetch(q(`/api/sessions/${d.id}/close`), { method: "POST" });
+    else if (d.act === "open") await fetch(q(`/api/sessions/${d.id}/open-terminal`), { method: "POST" });
+    pollSessions();
+  }
+
   poll();
+  pollSessions();
 </script>
 </body>
 </html>
