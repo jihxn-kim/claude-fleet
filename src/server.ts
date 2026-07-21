@@ -14,7 +14,9 @@ const sessionStore = new SessionStore(
   join(CONFIG.dataDir, "projects.json"),
 );
 const realRunner: CommandRunner = {
-  run: (cmd, args) => execFileSync(cmd, args, { encoding: "utf8" }),
+  // stdio: capture stdout, capture (don't inherit) stderr so tmux's benign
+  // "no server running" on idle reconcile doesn't spam the launchd err log.
+  run: (cmd, args) => execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }),
 };
 const sessions = new SessionManager({
   store: sessionStore,
