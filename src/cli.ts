@@ -34,7 +34,7 @@ export function resolveCommand(argv: string[]): CliAction {
       if (!rest[0] || !rest[1]) return { kind: "error", message: "usage: fleet adopt <session-id> <project>" };
       return { kind: "http", method: "POST", path: "/api/sessions/adopt", body: { id: rest[0], project: rest[1] } };
     default:
-      return { kind: "error", message: `unknown command: ${cmd ?? "(none)"}\nfleet new|ls|resume|kill|attach|project add` };
+      return { kind: "error", message: `unknown command: ${cmd ?? "(none)"}\nfleet new|ls|resume|kill|attach|adopt|discover|project add` };
   }
 }
 

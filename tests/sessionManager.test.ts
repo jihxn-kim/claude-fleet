@@ -222,3 +222,17 @@ test("adopt: unknown project 400, missing session file 404, id already running 4
   mgr.launch("daggle"); // 2 running (33.. + gen1)
   expect(() => mgr.adopt("44444444-dddd", "daggle")).toThrowError(expect.objectContaining({ status: 409 }));
 });
+
+test("snippet strips control chars (terminal-injection safe) and reads bounded prefix", () => {
+  const { store, dir } = setup();
+  const runner = new FakeRunner();
+  const claudeDir = join(dir, "claude-projects");
+  const mgr = new SessionManager({
+    store, runner, repoRoot: "/repo", orchUrl: "http://127.0.0.1:4179",
+    mcpDir: join(dir, "mcp"), ruleText: "RULE", claudeProjectsDir: claudeDir,
+  });
+  seedClaudeSession(claudeDir, "/p/daggle", "55555555-eeee", "hi\x1b[31mred\x1b[0m\tthere");
+  const snip = mgr.discover("daggle").find((s) => s.id === "55555555-eeee")!.snippet;
+  expect(snip).not.toMatch(/[\x00-\x1f]/);
+  expect(snip).toContain("hi");
+});

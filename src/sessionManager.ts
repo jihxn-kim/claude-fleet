@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { writeFileSync, mkdirSync, existsSync, readdirSync, statSync, readFileSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync } from "node:fs";
 import { join, dirname } from "node:path";
 import type { SessionStore } from "./sessionStore.js";
 import type { SessionEntry, AvailableSession } from "./types.js";
@@ -36,31 +36,39 @@ function encodeProjectDir(path: string): string {
 }
 
 function firstUserSnippet(file: string): string {
+  let buf = "";
   try {
-    const lines = readFileSync(file, "utf8").split("\n").slice(0, 200);
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let e: unknown;
-      try {
-        e = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      const obj = e as { type?: string; message?: { content?: unknown } };
-      if (obj.type !== "user" || !obj.message) continue;
-      const c = obj.message.content;
-      let text = "";
-      if (typeof c === "string") text = c;
-      else if (Array.isArray(c))
-        text = c
-          .filter((b) => (b as { type?: string })?.type === "text")
-          .map((b) => (b as { text?: string }).text ?? "")
-          .join(" ");
-      text = text.trim().replace(/\s+/g, " ");
-      if (text) return text.length > 80 ? text.slice(0, 80) + "…" : text;
+    const fd = openSync(file, "r");
+    try {
+      const chunk = Buffer.alloc(65536);
+      const n = readSync(fd, chunk, 0, chunk.length, 0);
+      buf = chunk.toString("utf8", 0, n);
+    } finally {
+      closeSync(fd);
     }
   } catch {
-    /* ignore unreadable file */
+    return "";
+  }
+  for (const line of buf.split("\n").slice(0, 200)) {
+    if (!line.trim()) continue;
+    let e: unknown;
+    try {
+      e = JSON.parse(line);
+    } catch {
+      continue; // truncated last line / non-json → skip
+    }
+    const obj = e as { type?: string; message?: { content?: unknown } };
+    if (obj.type !== "user" || !obj.message) continue;
+    const c = obj.message.content;
+    let text = "";
+    if (typeof c === "string") text = c;
+    else if (Array.isArray(c))
+      text = c
+        .filter((b) => (b as { type?: string })?.type === "text")
+        .map((b) => (b as { text?: string }).text ?? "")
+        .join(" ");
+    text = text.replace(/[\x00-\x1f]/g, " ").trim().replace(/\s+/g, " ");
+    if (text) return text.length > 80 ? text.slice(0, 80) + "…" : text;
   }
   return "";
 }
