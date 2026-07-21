@@ -46,7 +46,7 @@
     currentId = item.id;
     const r = item.request;
     const opts = r.options.map((o) =>
-      `<button class="opt" data-n="${o.n}">${o.n}<span class="lab">${esc(o.label)}</span></button>`).join("");
+      `<button class="opt" data-n="${Number(o.n)}">${Number(o.n)}<span class="lab">${esc(o.label)}</span></button>`).join("");
     root.innerHTML = `
       <div class="card">
         <p class="title">${esc(r.title)}</p>
