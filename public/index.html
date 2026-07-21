@@ -137,7 +137,7 @@
              <div class="a-hint">⚠️ 가져올 세션은 다른 곳에서 열려있으면 안 돼요(원 터미널 먼저 닫기).</div>
              ${(availCache[p.name] || []).length
                ? (availCache[p.name]).map((a) =>
-                   `<div class="a-row"><div class="a-meta"><div class="a-snip">${esc(a.snippet || a.id)}</div><div class="a-sub">${esc(a.mtime.slice(0,16).replace("T"," "))} · ${esc(a.id.slice(0,8))}</div></div><button data-act="adopt" data-id="${esc(a.id)}" data-proj="${esc(p.name)}">가져오기</button></div>`).join("")
+                   `<div class="a-row"><div class="a-meta"><div class="a-snip">${a.snippet ? esc(a.snippet) : "<i style=\"opacity:.5\">미리보기 없음 (큰 세션)</i>"}</div><div class="a-sub">${esc((a.mtime || "").slice(0,16).replace("T"," "))} · ${esc(a.id.slice(0,8))}</div></div><button data-act="adopt" data-id="${esc(a.id)}" data-proj="${esc(p.name)}">가져오기</button></div>`).join("")
                : `<div class="a-hint">가져올 세션이 없어요.</div>`}
              <div class="srow"><button class="discbtn" data-act="collapse">닫기</button></div>
            </div>`
