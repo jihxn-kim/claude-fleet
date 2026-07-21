@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>함대 컨트롤</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b0d10; color: #e8eaed; font: 16px/1.5 -apple-system, system-ui, sans-serif; padding: 16px; }
+  .empty { opacity: .5; text-align: center; margin-top: 40vh; }
+  .card { background: #16191d; border-radius: 16px; padding: 20px; max-width: 620px; margin: 0 auto; }
+  .title { font-size: 20px; font-weight: 700; margin: 0 0 16px; }
+  .sec-label { font-size: 12px; letter-spacing: .08em; color: #8a929b; margin: 16px 0 4px; text-transform: uppercase; }
+  .sec { margin: 0; }
+  .payoff { background: #1e2228; border-radius: 10px; padding: 12px; font-weight: 600; }
+  .opts { display: flex; gap: 10px; margin: 20px 0 8px; }
+  .opt { flex: 1; border: 0; border-radius: 12px; background: #23272e; color: #e8eaed; font-size: 22px; font-weight: 700; padding: 20px 0; cursor: pointer; }
+  .opt:active { transform: scale(.97); }
+  .opt .lab { display: block; font-size: 12px; font-weight: 500; opacity: .7; margin-top: 6px; }
+  textarea { width: 100%; background: #1e2228; border: 1px solid #2b3038; border-radius: 12px; color: #e8eaed; padding: 12px; font: inherit; min-height: 64px; }
+  .send { margin-top: 10px; width: 100%; border: 0; border-radius: 12px; background: #d2603a; color: #fff; font-size: 16px; font-weight: 700; padding: 14px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="root"><div class="empty">대기 중인 결정이 없어요</div></div>
+<script>
+  const token = new URLSearchParams(location.search).get("token") || "";
+  const q = (s) => `${s}${s.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+  let currentId = null;
+
+  async function poll() {
+    try {
+      const list = await (await fetch(q("/api/decisions"))).json();
+      render(list[0] || null);
+    } catch (e) { /* 네트워크 끊김은 다음 폴에서 복구 */ }
+    setTimeout(poll, 1500);
+  }
+
+  function esc(s) { return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+  function render(item) {
+    const root = document.getElementById("root");
+    if (!item) { currentId = null; root.innerHTML = '<div class="empty">대기 중인 결정이 없어요</div>'; return; }
+    if (item.id === currentId) return; // 렌더 중 입력 유지
+    currentId = item.id;
+    const r = item.request;
+    const opts = r.options.map((o) =>
+      `<button class="opt" data-n="${o.n}">${o.n}<span class="lab">${esc(o.label)}</span></button>`).join("");
+    root.innerHTML = `
+      <div class="card">
+        <p class="title">${esc(r.title)}</p>
+        <div class="sec-label">지금 왜?</div><p class="sec">${esc(r.why_now)}</p>
+        <div class="sec-label">THE PAYOFF</div><p class="sec payoff">${esc(r.payoff)}</p>
+        <div class="sec-label">트레이드오프</div><p class="sec">${esc(r.tradeoff)}</p>
+        ${r.context ? `<div class="sec-label">알아두면 좋은 맥락</div><p class="sec">${esc(r.context)}</p>` : ""}
+        <div class="opts">${opts}</div>
+        ${r.allow_freetext ? '<textarea id="memo" placeholder="예: 2번으로 가자. 대신 배포 전 한 번 더 확인해줘."></textarea><button class="send" id="send">메모로 답하기</button>' : ""}
+      </div>`;
+    root.querySelectorAll(".opt").forEach((b) =>
+      b.addEventListener("click", () => answer({ choice: Number(b.dataset.n) })));
+    const send = document.getElementById("send");
+    if (send) send.addEventListener("click", () => {
+      const memo = document.getElementById("memo").value.trim();
+      answer({ memo });
+    });
+  }
+
+  async function answer(body) {
+    if (!currentId) return;
+    await fetch(q(`/api/decisions/${currentId}/answer`), {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    currentId = null;
+    document.getElementById("root").innerHTML = '<div class="empty">보냈어요 ✓</div>';
+  }
+
+  poll();
+</script>
+</body>
+</html>
