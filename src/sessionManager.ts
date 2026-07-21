@@ -186,10 +186,7 @@ export class SessionManager {
     const id = this.genId();
     const tmuxName = `fleet__${slug(project)}__${id.slice(0, 6)}`;
     const mcpPath = this.writeMcpConfig(id);
-    this.o.runner.run("tmux", [
-      "new-session", "-d", "-s", tmuxName, "-c", proj.path,
-      "claude", ...this.claudeArgv("--session-id", id, mcpPath),
-    ]);
+    this.spawnTmux(tmuxName, proj.path, this.claudeArgv("--session-id", id, mcpPath));
     const entry: SessionEntry = {
       id, project, projectPath: proj.path, tmuxName,
       status: "running", startedAt: this.now(), lastSeen: this.now(),
@@ -198,16 +195,24 @@ export class SessionManager {
     return entry;
   }
 
+  // Create a detached tmux session running claude, with mouse mode on so the
+  // claude transcript can be scrolled when attached.
+  private spawnTmux(tmuxName: string, cwd: string, argv: string[]): void {
+    this.o.runner.run("tmux", ["new-session", "-d", "-s", tmuxName, "-c", cwd, "claude", ...argv]);
+    try {
+      this.o.runner.run("tmux", ["set-option", "-t", tmuxName, "mouse", "on"]);
+    } catch {
+      /* best-effort */
+    }
+  }
+
   resume(id: string): SessionEntry {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
     if (s.status === "running") throw new HttpError(409, `session ${id} already running`);
     if (this.o.store.runningCount(s.project) >= 2) throw new HttpError(409, `max 2 running for ${s.project}`);
     const mcpPath = this.writeMcpConfig(id);
-    this.o.runner.run("tmux", [
-      "new-session", "-d", "-s", s.tmuxName, "-c", s.projectPath,
-      "claude", ...this.claudeArgv("--resume", id, mcpPath),
-    ]);
+    this.spawnTmux(s.tmuxName, s.projectPath, this.claudeArgv("--resume", id, mcpPath));
     s.status = "running";
     s.startedAt = this.now();
     s.lastSeen = this.now();
@@ -305,10 +310,7 @@ export class SessionManager {
     if (!existsSync(file)) throw new HttpError(404, `no session ${id} in project ${project}`);
     const tmuxName = `fleet__${slug(project)}__${id.slice(0, 6)}`;
     const mcpPath = this.writeMcpConfig(id);
-    this.o.runner.run("tmux", [
-      "new-session", "-d", "-s", tmuxName, "-c", proj.path,
-      "claude", ...this.claudeArgv("--resume", id, mcpPath),
-    ]);
+    this.spawnTmux(tmuxName, proj.path, this.claudeArgv("--resume", id, mcpPath));
     const entry: SessionEntry = {
       id, project, projectPath: proj.path, tmuxName,
       status: "running", startedAt: this.now(), lastSeen: this.now(),
