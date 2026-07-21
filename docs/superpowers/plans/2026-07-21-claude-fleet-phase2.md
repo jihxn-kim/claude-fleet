@@ -14,7 +14,7 @@
 - 포트 4179, 패널 API는 `?token=`/`x-fleet-token` 가드(Phase 1과 동일). 세션용 `/internal/*`는 토큰 없음.
 - **세션 id = `crypto.randomUUID()`**. 이 uuid 하나가 claude 세션id(`--session-id`) = fleet 세션토큰(`FLEET_SESSION_TOKEN`) = tmux 이름 접미로 **통일**된다.
 - tmux 세션 이름: `fleet__<projectSlug>__<uuid앞6자>` (`slug` = 영숫자 외 `-`).
-- 프로젝트당 **running 최대 2** 강제(초과 launch는 409, 아무 것도 안 만듦).
+- 프로젝트당 **running 최대 2** 강제(초과 launch는 409, 아무 것도 안 만듦). **resume도 동일**: 이미 running 2개면 resume도 409.
 - 세션 실행 flag(검증됨): `--permission-mode acceptEdits`, `--append-system-prompt <fleet-rule.txt 내용>`, `--mcp-config data/mcp/<uuid>.json`, `--strict-mcp-config`, `--allowedTools mcp__fleet__request_decision`. 새 세션은 `--session-id <uuid>`, 이어가기는 `--resume <uuid>`.
 - **tmux/claude 실행은 셸 문자열 금지 — argv 배열로 `spawn`/`execFileSync`** (따옴표/`$()` 이스케이프 회피). fleet-rule은 `readFileSync`로 읽어 인자 전달.
 - `data/`(projects.json, sessions.json, mcp/*.json)는 gitignore됨.
@@ -363,6 +363,15 @@ test("resume: stopped -> new-session with --resume, running; running -> 409", ()
   expect(() => mgr.resume("nope")).toThrowError(expect.objectContaining({ status: 404 }));
 });
 
+test("resume rejected with 409 when project already has 2 running", () => {
+  const { mgr } = setup();
+  const a = mgr.launch("daggle");
+  mgr.launch("daggle");   // 2 running
+  mgr.close(a.id);        // a stopped; 1 running
+  mgr.launch("daggle");   // 2 running again (a still stopped)
+  expect(() => mgr.resume(a.id)).toThrowError(expect.objectContaining({ status: 409 }));
+});
+
 test("reconcile: running sessions absent from tmux list become stopped", () => {
   const { store, runner, mgr } = setup();
   const a = mgr.launch("daggle");
@@ -466,6 +475,7 @@ export class SessionManager {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
     if (s.status === "running") throw new HttpError(409, `session ${id} already running`);
+    if (this.o.store.runningCount(s.project) >= 2) throw new HttpError(409, `max 2 running for ${s.project}`);
     const mcpPath = this.writeMcpConfig(id);
     this.o.runner.run("tmux", [
       "new-session", "-d", "-s", s.tmuxName, "-c", s.projectPath,

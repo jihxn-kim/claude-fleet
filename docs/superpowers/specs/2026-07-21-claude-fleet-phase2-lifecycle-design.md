@@ -150,7 +150,7 @@ tmux new-session -d -s "<tmuxName>" -c "<projectPath>" \
 
 ## 7. 에러 / 엣지
 - 상한 초과 launch → 409, 아무 것도 안 만듦.
-- resume 대상이 running이거나 없음 → 409/404.
+- resume 대상이 running이거나 없음 → 409/404. **이미 프로젝트에 running 2개면 resume도 409(max 2)** — 하나 닫고 resume.
 - close 대상이 이미 stopped/없음 → 멱등(200/404).
 - 존재하지 않는 project로 new → 400.
 - 오케스트레이터 재시작: 부팅 시 reconcile로 running/stopped 정합성 복구. (죽어있던 tmux는 stopped로.)
