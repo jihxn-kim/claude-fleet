@@ -155,7 +155,8 @@ export function createServer(
         try {
           const buf = await readFile(file);
           const ext = safe.slice(safe.lastIndexOf("."));
-          res.writeHead(200, { "content-type": CONTENT_TYPES[ext] ?? "application/octet-stream" });
+          // no-cache: the panel is iterated live, so browsers must re-fetch
+          res.writeHead(200, { "content-type": CONTENT_TYPES[ext] ?? "application/octet-stream", "cache-control": "no-cache" });
           return res.end(buf);
         } catch {
           return send(res, 404, "not found", "text/plain");
