@@ -110,6 +110,12 @@ function sessionPreview(file: string): string {
   return "";
 }
 
+// A real conversation always has at least one assistant turn near the top.
+// A stub session (claude opened but never used) has none — hide those.
+function hasConversation(file: string): boolean {
+  return readChunk(file, false, PREVIEW_HEAD).includes('"type":"assistant"');
+}
+
 export class SessionManager {
   private now: () => string;
   private genId: () => string;
@@ -191,7 +197,9 @@ export class SessionManager {
     if (!proj) throw new HttpError(400, `unknown project: ${project}`);
     const dir = join(this.o.claudeProjectsDir, encodeProjectDir(proj.path));
     if (!existsSync(dir)) return [];
-    const files = readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
+    const files = readdirSync(dir)
+      .filter((f) => f.endsWith(".jsonl"))
+      .filter((f) => hasConversation(join(dir, f))); // skip empty stub sessions
     const out: AvailableSession[] = files.map((f) => {
       const full = join(dir, f);
       return {

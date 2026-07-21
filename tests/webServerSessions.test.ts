@@ -103,7 +103,11 @@ function seedSession(dir: string, projectPath: string, id: string, firstUser: st
   const enc = projectPath.replace(/[/.]/g, "-");
   const d = join(dir, "claude-projects", enc);
   mkdirSync(d, { recursive: true });
-  writeFileSync(join(d, `${id}.jsonl`), JSON.stringify({ type: "user", message: { role: "user", content: firstUser } }));
+  const lines = [
+    JSON.stringify({ type: "user", message: { role: "user", content: firstUser } }),
+    JSON.stringify({ type: "assistant", message: { role: "assistant", content: "ok" } }),
+  ].join("\n");
+  writeFileSync(join(d, `${id}.jsonl`), lines);
 }
 
 test("GET /api/projects/:name/available lists discoverable sessions; adopt registers one", async () => {

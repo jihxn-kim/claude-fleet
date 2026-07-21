@@ -149,6 +149,7 @@ function seedClaudeSession(claudeDir: string, projectPath: string, id: string, f
   const lines = [
     JSON.stringify({ type: "mode", mode: "normal", sessionId: id }),
     JSON.stringify({ type: "user", message: { role: "user", content: firstUser } }),
+    JSON.stringify({ type: "assistant", message: { role: "assistant", content: "ok" } }),
   ].join("\n");
   _wf(join(dir, `${id}.jsonl`), lines);
 }
@@ -257,4 +258,21 @@ test("snippet = LAST real user message, skipping caveats/system/tool_result turn
   _wf(join(d, "77777777-ffff.jsonl"), lines);
   const snip = mgr.discover("daggle").find((s) => s.id === "77777777-ffff")!.snippet;
   expect(snip).toBe("방화벽 포트 왜 안 막혀?");
+});
+
+test("discover hides empty stub sessions (no assistant turn)", () => {
+  const { store, dir } = setup();
+  const runner = new FakeRunner();
+  const claudeDir = join(dir, "claude-projects");
+  const mgr = new SessionManager({
+    store, runner, repoRoot: "/repo", orchUrl: "http://127.0.0.1:4179",
+    mcpDir: join(dir, "mcp"), ruleText: "RULE", claudeProjectsDir: claudeDir,
+  });
+  const d = join(claudeDir, "/p/daggle".replace(/[/.]/g, "-"));
+  _mk(d, { recursive: true });
+  _wf(join(d, "aaaaaaaa-stub.jsonl"), JSON.stringify({ type: "user", message: { role: "user", content: "hi" } }));
+  seedClaudeSession(claudeDir, "/p/daggle", "bbbbbbbb-real", "진짜 대화");
+  const ids = mgr.discover("daggle").map((s) => s.id);
+  expect(ids).toContain("bbbbbbbb-real");
+  expect(ids).not.toContain("aaaaaaaa-stub");
 });
