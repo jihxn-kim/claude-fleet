@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { writeFileSync, mkdirSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync, fstatSync } from "node:fs";
 import { join, dirname } from "node:path";
 import type { SessionStore } from "./sessionStore.js";
 import type { SessionEntry, AvailableSession } from "./types.js";
@@ -35,40 +35,68 @@ function encodeProjectDir(path: string): string {
   return path.replace(/[/.]/g, "-");
 }
 
-function firstUserSnippet(file: string): string {
-  let buf = "";
+// Read up to 64KB from either the start or the end of a file (bounded so
+// multi-hundred-MB session files never get fully loaded).
+function readChunk(file: string, fromEnd: boolean): string {
   try {
     const fd = openSync(file, "r");
     try {
-      const chunk = Buffer.alloc(65536);
-      const n = readSync(fd, chunk, 0, chunk.length, 0);
-      buf = chunk.toString("utf8", 0, n);
+      const size = fstatSync(fd).size;
+      const len = Math.min(65536, size);
+      const pos = fromEnd ? size - len : 0;
+      const buf = Buffer.alloc(len);
+      const n = readSync(fd, buf, 0, len, pos);
+      return buf.toString("utf8", 0, n);
     } finally {
       closeSync(fd);
     }
   } catch {
     return "";
   }
-  for (const line of buf.split("\n").slice(0, 200)) {
-    if (!line.trim()) continue;
-    let e: unknown;
-    try {
-      e = JSON.parse(line);
-    } catch {
-      continue; // truncated last line / non-json → skip
-    }
-    const obj = e as { type?: string; message?: { content?: unknown } };
-    if (obj.type !== "user" || !obj.message) continue;
-    const c = obj.message.content;
-    let text = "";
-    if (typeof c === "string") text = c;
-    else if (Array.isArray(c))
-      text = c
-        .filter((b) => (b as { type?: string })?.type === "text")
-        .map((b) => (b as { text?: string }).text ?? "")
-        .join(" ");
-    text = text.replace(/[\x00-\x1f]/g, " ").trim().replace(/\s+/g, " ");
-    if (text) return text.length > 80 ? text.slice(0, 80) + "…" : text;
+}
+
+// Extract a real user prompt from a jsonl line, or "" if it's not one
+// (assistant turn, tool_result, or an auto-generated caveat/system turn).
+function extractUserText(line: string): string {
+  if (!line.trim()) return "";
+  let e: unknown;
+  try {
+    e = JSON.parse(line);
+  } catch {
+    return ""; // truncated / non-json
+  }
+  const obj = e as { type?: string; message?: { content?: unknown } };
+  if (obj.type !== "user" || !obj.message) return "";
+  const c = obj.message.content;
+  let text = "";
+  if (typeof c === "string") text = c;
+  else if (Array.isArray(c)) {
+    if (c.some((b) => (b as { type?: string })?.type === "tool_result")) return "";
+    text = c
+      .filter((b) => (b as { type?: string })?.type === "text")
+      .map((b) => (b as { text?: string }).text ?? "")
+      .join(" ");
+  }
+  text = text.replace(/[\x00-\x1f]/g, " ").trim().replace(/\s+/g, " ");
+  if (!text) return "";
+  // skip auto-generated / system turns — not the user's own prompt
+  if (/^(<local-command|<command-|Caveat|<task-notification|\[SYSTEM|This session is being continued)/.test(text)) return "";
+  return text;
+}
+
+// Preview of what a session is about, for identifying it in the adopt list.
+// Prefers the LAST real user message (recent context = best identifier),
+// falling back to the first. Both reads are bounded to 64KB.
+function sessionPreview(file: string): string {
+  const trunc = (t: string): string => (t.length > 90 ? t.slice(0, 90) + "…" : t);
+  const tail = readChunk(file, true).split("\n");
+  for (let i = tail.length - 1; i >= 0; i--) {
+    const t = extractUserText(tail[i]);
+    if (t) return trunc(t);
+  }
+  for (const line of readChunk(file, false).split("\n")) {
+    const t = extractUserText(line);
+    if (t) return trunc(t);
   }
   return "";
 }
@@ -160,7 +188,7 @@ export class SessionManager {
       return {
         id: f.replace(/\.jsonl$/, ""),
         mtime: statSync(full).mtime.toISOString(),
-        snippet: firstUserSnippet(full),
+        snippet: sessionPreview(full),
       };
     });
     out.sort((a, b) => (a.mtime < b.mtime ? 1 : -1));

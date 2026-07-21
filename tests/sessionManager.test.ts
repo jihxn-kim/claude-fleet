@@ -236,3 +236,25 @@ test("snippet strips control chars (terminal-injection safe) and reads bounded p
   expect(snip).not.toMatch(/[\x00-\x1f]/);
   expect(snip).toContain("hi");
 });
+
+test("snippet = LAST real user message, skipping caveats/system/tool_result turns", () => {
+  const { store, dir } = setup();
+  const runner = new FakeRunner();
+  const claudeDir = join(dir, "claude-projects");
+  const mgr = new SessionManager({
+    store, runner, repoRoot: "/repo", orchUrl: "http://127.0.0.1:4179",
+    mcpDir: join(dir, "mcp"), ruleText: "RULE", claudeProjectsDir: claudeDir,
+  });
+  const d = join(claudeDir, "/p/daggle".replace(/[/.]/g, "-"));
+  _mk(d, { recursive: true });
+  const lines = [
+    JSON.stringify({ type: "user", message: { role: "user", content: "<local-command-caveat>ignore me" } }),
+    JSON.stringify({ type: "user", message: { role: "user", content: "프로젝트 초반 질문" } }),
+    JSON.stringify({ type: "assistant", message: { role: "assistant", content: "..." } }),
+    JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "tool_result", content: "x" }] } }),
+    JSON.stringify({ type: "user", message: { role: "user", content: "방화벽 포트 왜 안 막혀?" } }),
+  ].join("\n");
+  _wf(join(d, "77777777-ffff.jsonl"), lines);
+  const snip = mgr.discover("daggle").find((s) => s.id === "77777777-ffff")!.snippet;
+  expect(snip).toBe("방화벽 포트 왜 안 막혀?");
+});
