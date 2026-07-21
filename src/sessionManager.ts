@@ -333,8 +333,12 @@ export class SessionManager {
   }
 
   private claudeArgv(resumeFlag: string, id: string, mcpPath: string): string[] {
+    // Resuming a session that's live as a background agent fails ("currently
+    // running as a background agent"); --fork-session branches a copy (with
+    // full history) that fleet can run without conflicting with the original.
+    const head = resumeFlag === "--resume" ? [resumeFlag, id, "--fork-session"] : [resumeFlag, id];
     return [
-      resumeFlag, id,
+      ...head,
       "--permission-mode", "acceptEdits",
       "--append-system-prompt", this.o.ruleText,
       "--mcp-config", mcpPath,
