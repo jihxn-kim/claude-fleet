@@ -45,10 +45,14 @@
   .a-row button { border: 0; border-radius: 8px; background: #1e2f22; color: #7ee2a8; padding: 6px 10px; font-size: 12px; cursor: pointer; }
   .discbtn { background: #1a1f26 !important; color: #8a929b !important; }
   .a-hint { font-size: 11px; color: #6b727a; padding: 4px 0; }
+  #allsessions { max-width: 620px; margin: 12px auto 0; }
+  .lbl2 { font-size: 12px; color: #8a929b; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px; }
+  .a-run { color: #7ee2a8; }
 </style>
 </head>
 <body>
 <div id="root"><div class="empty">대기 중인 결정이 없어요</div></div>
+<div id="allsessions"></div>
 <div id="addproj" class="addproj">
   <div class="lbl">프로젝트 추가</div>
   <input id="pname" placeholder="이름 (예: daggle)" autocapitalize="off" autocorrect="off" spellcheck="false" />
@@ -161,7 +165,28 @@
       await fetch(q("/api/sessions/adopt"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: d.id, project: d.proj }) });
       expandedProj = null;
     }
+    else if (d.act === "adopt-path") {
+      if (d.running === "1" && !confirm("이 세션 지금 실행 중이에요.\n원래 터미널을 먼저 닫았나요? 안 닫으면 충돌해요.")) return;
+      await fetch(q("/api/sessions/adopt"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: d.id, projectPath: d.path }) });
+    }
     pollSessions();
+  }
+
+  async function pollAll() {
+    try {
+      const list = await fetch(q("/api/all-sessions")).then((r) => r.json());
+      renderAll(Array.isArray(list) ? list : []);
+    } catch (e) { /* retry next tick */ }
+    setTimeout(pollAll, 5000);
+  }
+  function renderAll(list) {
+    const el = document.getElementById("allsessions");
+    if (!list.length) { el.innerHTML = ""; return; }
+    el.innerHTML = `<div class="lbl2">내 세션 (최근 · 🟢=실행 중)</div>`
+      + `<div class="a-hint">⚠️ 실행 중(🟢) 세션은 원래 터미널을 먼저 닫고 가져와요(안 그러면 충돌).</div>`
+      + list.map((s) =>
+        `<div class="a-row"><div class="a-meta"><div class="a-snip">${s.running ? '<span class="a-run">🟢</span> ' : ""}${esc(s.snippet || "(미리보기 없음)")}</div><div class="a-sub">${esc(s.projectName)} · ${esc((s.mtime || "").slice(5, 16).replace("T", " "))}</div></div><button data-act="adopt-path" data-id="${esc(s.id)}" data-path="${esc(s.projectPath)}" data-running="${s.running ? "1" : "0"}">가져오기</button></div>`).join("");
+    el.querySelectorAll("button[data-act]").forEach((b) => b.addEventListener("click", () => sessionAction(b.dataset)));
   }
 
   async function addProject() {
@@ -189,6 +214,7 @@
 
   poll();
   pollSessions();
+  pollAll();
 </script>
 </body>
 </html>
