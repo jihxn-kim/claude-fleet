@@ -50,6 +50,7 @@
   .a-run { color: #7ee2a8; }
   #settings { max-width: 620px; margin: 18px auto; }
   #settings select { background: #1e2228; color: #e8eaed; border: 1px solid #2b3038; border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; }
+  #settings .setrow { margin-bottom: 8px; }
 </style>
 </head>
 <body>
@@ -206,17 +207,31 @@
   }
   document.getElementById("paddbtn").addEventListener("click", addProject);
 
+  const PERM_MODES = [
+    { id: "acceptEdits", name: "편집만 자동 (기본)" },
+    { id: "bypassPermissions", name: "전부 자동 (무인)" },
+    { id: "default", name: "매번 물어봄" },
+  ];
   async function loadTerminals() {
     try {
-      const { detected, current } = await fetch(q("/api/terminals")).then((r) => r.json());
+      const [terms, perm] = await Promise.all([
+        fetch(q("/api/terminals")).then((r) => r.json()),
+        fetch(q("/api/permission-mode")).then((r) => r.json()),
+      ]);
       const el = document.getElementById("settings");
-      if (!detected || !detected.length) { el.innerHTML = ""; return; }
-      el.innerHTML = `<span class="lbl2">"맥에서 열기" 터미널: </span><select id="termsel">`
-        + detected.map((t) => `<option value="${esc(t.id)}"${t.id === current ? " selected" : ""}>${esc(t.name)}</option>`).join("")
-        + `</select>`;
-      document.getElementById("termsel").addEventListener("change", (e) => {
-        fetch(q("/api/terminal"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ terminal: e.target.value }) });
-      });
+      let html = "";
+      if (terms.detected && terms.detected.length) {
+        html += `<div class="setrow"><span class="lbl2">"맥에서 열기" 터미널</span> <select id="termsel">`
+          + terms.detected.map((t) => `<option value="${esc(t.id)}"${t.id === terms.current ? " selected" : ""}>${esc(t.name)}</option>`).join("")
+          + `</select></div>`;
+      }
+      html += `<div class="setrow"><span class="lbl2">새 세션 권한 모드</span> <select id="permsel">`
+        + PERM_MODES.map((m) => `<option value="${esc(m.id)}"${m.id === perm.current ? " selected" : ""}>${esc(m.name)}</option>`).join("")
+        + `</select></div>`;
+      el.innerHTML = html;
+      const ts = document.getElementById("termsel");
+      if (ts) ts.addEventListener("change", (e) => fetch(q("/api/terminal"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ terminal: e.target.value }) }));
+      document.getElementById("permsel").addEventListener("change", (e) => fetch(q("/api/permission-mode"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: e.target.value }) }));
     } catch (e) { /* ignore */ }
   }
 

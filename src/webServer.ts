@@ -139,6 +139,16 @@ export function createServer(
           sessions.setTerminal(terminal);
           return send(res, 200, { ok: true });
         }
+        if (path === "/api/permission-mode" && method === "GET") {
+          if (!sessions) return send(res, 404, { error: "sessions disabled" });
+          return send(res, 200, { current: sessions.getPermissionMode() });
+        }
+        if (path === "/api/permission-mode" && method === "POST") {
+          if (!sessions) return send(res, 404, { error: "sessions disabled" });
+          const { mode } = (await readJson(req)) as { mode: string };
+          sessions.setPermissionMode(mode);
+          return send(res, 200, { ok: true });
+        }
         if (path === "/api/sessions/adopt" && method === "POST") {
           if (!sessions) return send(res, 404, { error: "sessions disabled" });
           try {

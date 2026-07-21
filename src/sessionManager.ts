@@ -41,10 +41,14 @@ const TERMINALS = [
   { id: "hyper", name: "Hyper", app: "/Applications/Hyper.app" },
 ];
 
-function readConfig(path: string | undefined): { terminal?: string } {
+interface FleetConfig {
+  terminal?: string;
+  permissionMode?: string;
+}
+function readConfig(path: string | undefined): FleetConfig {
   if (!path) return {};
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as { terminal?: string };
+    return JSON.parse(readFileSync(path, "utf8")) as FleetConfig;
   } catch {
     return {};
   }
@@ -249,6 +253,16 @@ export class SessionManager {
     if (this.o.configPath) writeConfig(this.o.configPath, { ...readConfig(this.o.configPath), terminal: id });
   }
 
+  // Permission mode new sessions launch with. Default acceptEdits (edits auto,
+  // risky tools still ask). bypassPermissions = fully autonomous.
+  getPermissionMode(): string {
+    return readConfig(this.o.configPath).permissionMode ?? "acceptEdits";
+  }
+
+  setPermissionMode(mode: string): void {
+    if (this.o.configPath) writeConfig(this.o.configPath, { ...readConfig(this.o.configPath), permissionMode: mode });
+  }
+
   openTerminal(id: string): void {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
@@ -400,7 +414,7 @@ export class SessionManager {
     const head = resumeFlag === "--resume" ? [resumeFlag, id, "--fork-session"] : [resumeFlag, id];
     return [
       ...head,
-      "--permission-mode", "acceptEdits",
+      "--permission-mode", this.getPermissionMode(),
       "--append-system-prompt", this.o.ruleText,
       "--mcp-config", mcpPath,
       "--strict-mcp-config",
