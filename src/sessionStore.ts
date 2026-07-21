@@ -1,0 +1,60 @@
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { dirname } from "node:path";
+import type { SessionEntry, ProjectEntry, SessionStatus } from "./types.js";
+
+function readJson<T>(path: string, fallback: T): T {
+  if (!existsSync(path)) return fallback;
+  return JSON.parse(readFileSync(path, "utf8")) as T;
+}
+function writeJson(path: string, data: unknown): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(data, null, 2));
+}
+
+export class SessionStore {
+  constructor(
+    private sessionsPath: string,
+    private projectsPath: string,
+    private now: () => string = () => new Date().toISOString(),
+  ) {}
+
+  listProjects(): ProjectEntry[] {
+    const map = readJson<Record<string, { path: string }>>(this.projectsPath, {});
+    return Object.entries(map).map(([name, v]) => ({ name, path: v.path }));
+  }
+  getProject(name: string): ProjectEntry | undefined {
+    return this.listProjects().find((p) => p.name === name);
+  }
+  addProject(name: string, path: string): ProjectEntry {
+    const map = readJson<Record<string, { path: string }>>(this.projectsPath, {});
+    map[name] = { path };
+    writeJson(this.projectsPath, map);
+    return { name, path };
+  }
+
+  listSessions(): SessionEntry[] {
+    return readJson<SessionEntry[]>(this.sessionsPath, []);
+  }
+  getSession(id: string): SessionEntry | undefined {
+    return this.listSessions().find((s) => s.id === id);
+  }
+  runningCount(project: string): number {
+    return this.listSessions().filter((s) => s.project === project && s.status === "running").length;
+  }
+  upsert(entry: SessionEntry): void {
+    const all = this.listSessions();
+    const i = all.findIndex((s) => s.id === entry.id);
+    if (i >= 0) all[i] = entry;
+    else all.push(entry);
+    writeJson(this.sessionsPath, all);
+  }
+  setStatus(id: string, status: SessionStatus): SessionEntry | undefined {
+    const all = this.listSessions();
+    const s = all.find((x) => x.id === id);
+    if (!s) return undefined;
+    s.status = status;
+    s.lastSeen = this.now();
+    writeJson(this.sessionsPath, all);
+    return s;
+  }
+}

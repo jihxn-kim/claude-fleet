@@ -25,3 +25,20 @@ export interface PendingDecisionView {
   request: DecisionRequest;
   createdAt: string;
 }
+
+export type SessionStatus = "running" | "stopped";
+
+export interface SessionEntry {
+  id: string; // uuid = claude session id = fleet token
+  project: string;
+  projectPath: string;
+  tmuxName: string;
+  status: SessionStatus;
+  startedAt: string;
+  lastSeen: string;
+}
+
+export interface ProjectEntry {
+  name: string;
+  path: string;
+}
