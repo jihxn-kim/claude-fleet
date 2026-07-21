@@ -1,14 +1,20 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 import type { SessionEntry, ProjectEntry, SessionStatus } from "./types.js";
 
 function readJson<T>(path: string, fallback: T): T {
   if (!existsSync(path)) return fallback;
-  return JSON.parse(readFileSync(path, "utf8")) as T;
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as T;
+  } catch {
+    return fallback; // corrupt/partial file → treat as empty rather than crash
+  }
 }
 function writeJson(path: string, data: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(data, null, 2));
+  const tmp = `${path}.tmp`;
+  writeFileSync(tmp, JSON.stringify(data, null, 2));
+  renameSync(tmp, path); // atomic replace — no truncated file on crash mid-write
 }
 
 export class SessionStore {

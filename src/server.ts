@@ -34,7 +34,11 @@ server.listen(CONFIG.port, () => {
   if (CONFIG.panelToken === "change-me-please") {
     console.warn("⚠️  FLEET_PANEL_TOKEN 기본값 사용 중 — 실제 토큰으로 교체하세요.");
   }
-  sessions.reconcile(); // boot-time reconcile
+  try {
+    sessions.reconcile(); // boot-time reconcile
+  } catch (e) {
+    console.error("boot reconcile error:", e);
+  }
   setInterval(() => {
     try {
       sessions.reconcile();

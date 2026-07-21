@@ -19,6 +19,11 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   return raw ? JSON.parse(raw) : {};
 }
 
+function isLoopback(req: IncomingMessage): boolean {
+  const a = req.socket.remoteAddress ?? "";
+  return a === "127.0.0.1" || a === "::1" || a === "::ffff:127.0.0.1";
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript",
@@ -56,6 +61,7 @@ export function createServer(
       const method = req.method ?? "GET";
 
       if (path === "/internal/decisions" && method === "POST") {
+        if (!isLoopback(req)) return send(res, 403, { error: "loopback only" });
         const sessionToken = String(req.headers["x-fleet-session"] ?? "session-1");
         const request = (await readJson(req)) as DecisionRequest;
         const { id, answer } = store.create(sessionToken, request);
@@ -71,6 +77,7 @@ export function createServer(
       }
 
       if (path === "/internal/notify" && method === "POST") {
+        if (!isLoopback(req)) return send(res, 403, { error: "loopback only" });
         const body = (await readJson(req)) as { sessionId: string; message: string };
         notices.set(body.sessionId, { message: body.message, at: new Date().toISOString() });
         return send(res, 200, { ok: true });

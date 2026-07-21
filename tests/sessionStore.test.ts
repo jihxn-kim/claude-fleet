@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionStore } from "../src/sessionStore.js";
@@ -57,6 +57,14 @@ test("setStatus updates status + lastSeen; unknown id returns undefined", () => 
   expect(r!.status).toBe("stopped");
   expect(r!.lastSeen).toBe("2026-07-21T00:00:00.000Z");
   expect(s.setStatus("nope", "stopped")).toBeUndefined();
+});
+
+test("corrupt json file reads as empty instead of throwing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fleet-corrupt-"));
+  const ss = join(dir, "sessions.json");
+  writeFileSync(ss, "{ this is not valid json", "utf8");
+  const s = new SessionStore(ss, join(dir, "projects.json"));
+  expect(s.listSessions()).toEqual([]);
 });
 
 test("persistence: a new store instance reads the same files", () => {
