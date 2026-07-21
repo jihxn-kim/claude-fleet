@@ -35,16 +35,17 @@ function encodeProjectDir(path: string): string {
   return path.replace(/[/.]/g, "-");
 }
 
-// Read up to 256KB from either the start or the end of a file (bounded so
-// multi-hundred-MB session files never get fully loaded; agentic sessions
-// put many tool turns between user messages, so a wider window finds one).
-const PREVIEW_BYTES = 262144;
-function readChunk(file: string, fromEnd: boolean): string {
+// Read a bounded chunk from the start or end of a file — never the whole
+// thing (session files can be hundreds of MB). Agentic sessions bury the
+// last user message under MBs of tool turns, so the tail window is wide.
+const PREVIEW_HEAD = 65536; // 64KB
+const PREVIEW_TAIL = 2_097_152; // 2MB
+function readChunk(file: string, fromEnd: boolean, maxBytes: number): string {
   try {
     const fd = openSync(file, "r");
     try {
       const size = fstatSync(fd).size;
-      const len = Math.min(PREVIEW_BYTES, size);
+      const len = Math.min(maxBytes, size);
       const pos = fromEnd ? size - len : 0;
       const buf = Buffer.alloc(len);
       const n = readSync(fd, buf, 0, len, pos);
@@ -70,16 +71,22 @@ function extractUserText(line: string): string {
   const obj = e as { type?: string; message?: { content?: unknown } };
   if (obj.type !== "user" || !obj.message) return "";
   const c = obj.message.content;
-  let text = "";
-  if (typeof c === "string") text = c;
+  let raw = "";
+  if (typeof c === "string") raw = c;
   else if (Array.isArray(c)) {
     if (c.some((b) => (b as { type?: string })?.type === "tool_result")) return "";
-    text = c
+    raw = c
       .filter((b) => (b as { type?: string })?.type === "text")
       .map((b) => (b as { text?: string }).text ?? "")
-      .join(" ");
+      .join("\n");
   }
-  text = text.replace(/[\x00-\x1f]/g, " ").trim().replace(/\s+/g, " ");
+  // drop pasted shell-prompt lines (e.g. "user@host ~ % cmd") so the user's
+  // actual words surface instead of terminal output they pasted in.
+  const prose = raw
+    .split("\n")
+    .filter((l) => !/^\s*[\w.+-]+@[\w.+-]+.*[%$#]\s/.test(l))
+    .join(" ");
+  const text = prose.replace(/[\x00-\x1f]/g, " ").trim().replace(/\s+/g, " ");
   if (!text) return "";
   // skip auto-generated / system turns — not the user's own prompt
   if (/^(<local-command|<command-|Caveat|<task-notification|\[SYSTEM|This session is being continued)/.test(text)) return "";
@@ -91,12 +98,12 @@ function extractUserText(line: string): string {
 // falling back to the first. Both reads are bounded to 64KB.
 function sessionPreview(file: string): string {
   const trunc = (t: string): string => (t.length > 90 ? t.slice(0, 90) + "…" : t);
-  const tail = readChunk(file, true).split("\n");
+  const tail = readChunk(file, true, PREVIEW_TAIL).split("\n");
   for (let i = tail.length - 1; i >= 0; i--) {
     const t = extractUserText(tail[i]);
     if (t) return trunc(t);
   }
-  for (const line of readChunk(file, false).split("\n")) {
+  for (const line of readChunk(file, false, PREVIEW_HEAD).split("\n")) {
     const t = extractUserText(line);
     if (t) return trunc(t);
   }
