@@ -19,6 +19,15 @@
 - 원격 접속은 Tailscale로. `/internal/*`는 loopback 게이트, 패널 API는 토큰 가드.
 - "맥에서 열기"는 설치된 터미널(iTerm2/Terminal 등)을 감지해 선택한 것으로 attach.
 
+## 터미널에서 열기 (iTerm2 권장)
+
+패널에서 세션을 **포그라운드**로 열면 설치된 터미널을 감지해 그 세션의 tmux에 붙는다.
+
+- **iTerm2** — `tmux -CC`(네이티브 tmux 통합)로 붙어서 tmux 창이 **진짜 iTerm 창**이 된다. 스크롤·텍스트 선택·클립보드가 전부 네이티브(tmux copy-mode의 커서 따라옴/드래그 튕김 없음).
+  - **1회 설정 필요:** iTerm2 → Settings(⌘,) → **General › tmux** → **"Automatically bury the tmux client session after connecting"** 체크.
+  - 안 켜면 제어용(backchannel) 창이 하나 더 뜬다. **기계당 한 번만** 하면 되고 세션마다 하는 게 아니다. (plist 키: `AutoHideTmuxClientSession`)
+- **그 외 터미널**(Terminal.app 등) — 일반 `tmux attach`로 붙는다. 동작은 하지만 스크롤이 tmux copy-mode를 거쳐서 커서가 따라오거나 드래그 시 맨 아래로 튕길 수 있다. **네이티브 스크롤/선택은 iTerm2에서만** 되는데, 이는 tmux 제어모드(`-CC`)가 iTerm2 전용 기능이기 때문이다.
+
 ## 빠른 시작
 
 ```bash
