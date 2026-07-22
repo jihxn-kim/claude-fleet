@@ -270,31 +270,39 @@ export class SessionManager {
     const attach = `tmux attach -t ${s.tmuxName}`; // tmuxName is slug-safe, no injection
     const term = this.getTerminal();
     if (term === "iterm") {
-      // Focus the window already attached to this session (tagged by name);
-      // open a new one only if none exists.
-      const tag = `fleet:${s.tmuxName}`;
-      this.o.runner.run("osascript", [
-        "-e", `tell application "iTerm"`,
-        "-e", `activate`,
-        "-e", `set target to missing value`,
-        "-e", `repeat with w in windows`,
-        "-e", `repeat with tb in tabs of w`,
-        "-e", `repeat with ss in sessions of tb`,
-        "-e", `if name of ss is "${tag}" then set target to w`,
-        "-e", `end repeat`,
-        "-e", `end repeat`,
-        "-e", `end repeat`,
-        "-e", `if target is not missing value then`,
-        "-e", `select target`,
-        "-e", `else`,
-        "-e", `set nw to (create window with default profile)`,
-        "-e", `tell current session of nw`,
-        "-e", `set name to "${tag}"`,
-        "-e", `write text "${attach}"`,
-        "-e", `end tell`,
-        "-e", `end if`,
-        "-e", `end tell`,
-      ]);
+      // If a terminal is already attached to this tmux session, focus that
+      // window (matched by the client's tty); otherwise open a new one.
+      let tty = "";
+      try {
+        tty = this.o.runner.run("tmux", ["list-clients", "-t", s.tmuxName, "-F", "#{client_tty}"]).trim().split("\n")[0] ?? "";
+      } catch {
+        tty = "";
+      }
+      if (tty) {
+        this.o.runner.run("osascript", [
+          "-e", `tell application "iTerm"`,
+          "-e", `activate`,
+          "-e", `repeat with w in windows`,
+          "-e", `repeat with tb in tabs of w`,
+          "-e", `repeat with ss in sessions of tb`,
+          "-e", `if tty of ss is "${tty}" then`,
+          "-e", `select w`,
+          "-e", `select tb`,
+          "-e", `end if`,
+          "-e", `end repeat`,
+          "-e", `end repeat`,
+          "-e", `end repeat`,
+          "-e", `end tell`,
+        ]);
+      } else {
+        this.o.runner.run("osascript", [
+          "-e", `tell application "iTerm"`,
+          "-e", `activate`,
+          "-e", `set nw to (create window with default profile)`,
+          "-e", `tell current session of nw to write text "${attach}"`,
+          "-e", `end tell`,
+        ]);
+      }
     } else if (term === "terminal") {
       this.o.runner.run("osascript", ["-e", `tell application "Terminal" to do script "${attach}"`]);
     } else {
