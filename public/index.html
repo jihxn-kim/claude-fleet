@@ -29,6 +29,10 @@
   .srow button { border: 0; border-radius: 8px; background: #23272e; color: #e8eaed; padding: 6px 10px; font-size: 12px; cursor: pointer; }
   .srow button.kill { background: #3a1e1e; color: #f0a; }
   .srow .badge { color: #f5a623; font-size: 12px; }
+  .srow .act { font-size: 11px; white-space: nowrap; }
+  .act.busy { color: #6ab0ff; }
+  .act.idle { color: #7ee2a8; }
+  .act.wait { color: #f5a623; }
   .newbtn { background: #1e2f22 !important; color: #7ee2a8 !important; }
   .card .who { font-size: 12px; color: #7ee2a8; margin: -8px 0 12px; }
   .addproj { max-width: 620px; margin: 8px auto 0; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -135,10 +139,12 @@
       const rows = sessions.filter((s) => s.project === p.name).map((s) => {
         const running = s.status === "running";
         const badge = s.notice ? `<span class="badge" title="${esc(s.notice.message)}">⚠️</span>` : "";
+        const ACT = { busy: '<span class="act busy">🔵 작업중</span>', idle: '<span class="act idle">✅ 완료</span>', waiting: '<span class="act wait">⏳ 대기</span>', blocked: '<span class="act idle">✅ 완료</span>' };
+        const act = running ? (ACT[s.activity] || "") : "";
         const btns = running
           ? `<button data-act="open" data-id="${esc(s.id)}">맥에서 열기</button><button class="kill" data-act="close" data-id="${esc(s.id)}">닫기</button>`
           : `<button data-act="resume" data-id="${esc(s.id)}">resume</button>`;
-        return `<div class="srow"><span class="dot">${running ? "🟢" : "⚪️"}</span><span class="name">${esc(s.label || s.tmuxName)}</span>${badge}<button data-act="rename" data-id="${esc(s.id)}" data-label="${esc(s.label || "")}">✏️</button>${btns}</div>`;
+        return `<div class="srow"><span class="dot">${running ? "🟢" : "⚪️"}</span><span class="name">${esc(s.label || s.tmuxName)}</span>${act}${badge}<button data-act="rename" data-id="${esc(s.id)}" data-label="${esc(s.label || "")}">✏️</button>${btns}</div>`;
       }).join("");
       return `<div class="proj"><h3>${esc(p.name)}</h3>${rows}<div class="srow"><button class="newbtn" data-act="new" data-proj="${esc(p.name)}">+ 새 세션</button></div></div>`;
     }).join("");

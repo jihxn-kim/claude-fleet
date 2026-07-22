@@ -47,7 +47,8 @@ export function createServer(
   }
   function enrichSessions(): unknown[] {
     if (!sessions) return [];
-    return sessions.store.listSessions().map((s) => ({ ...s, notice: notices.get(s.id) ?? null }));
+    const activity = sessions.sessionActivity();
+    return sessions.store.listSessions().map((s) => ({ ...s, notice: notices.get(s.id) ?? null, activity: activity[s.id] ?? null }));
   }
   function sendHttpError(res: ServerResponse, err: unknown): void {
     if (err instanceof HttpError) send(res, err.status, { error: err.message });

@@ -421,15 +421,34 @@ export class SessionManager {
     return out.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("fleet__"));
   }
 
-  // Active (running) claude session ids, so we only --fork-session when we
-  // must — resuming a NON-running session in place avoids a duplicate copy.
-  private activeSessionIds(): Set<string> {
+  // `claude agents --json` — active sessions with their live state. Cached a
+  // few seconds so the panel's 2s poll doesn't spawn the CLI every time.
+  private agentsCache: { at: number; list: Array<{ sessionId?: string; id?: string; status?: string; state?: string }> } | null = null;
+  private agents(): Array<{ sessionId?: string; id?: string; status?: string; state?: string }> {
+    const now = Date.now();
+    if (this.agentsCache && now - this.agentsCache.at < 3000) return this.agentsCache.list;
     try {
-      const arr = JSON.parse(this.o.runner.run("claude", ["agents", "--json"])) as Array<{ sessionId?: string; id?: string }>;
-      return new Set(arr.map((a) => a.sessionId ?? a.id ?? "").filter(Boolean));
+      const list = JSON.parse(this.o.runner.run("claude", ["agents", "--json"]));
+      this.agentsCache = { at: now, list };
+      return list;
     } catch {
-      return new Set();
+      return this.agentsCache?.list ?? [];
     }
+  }
+
+  // Ids of currently-running sessions (so we only --fork-session when we must).
+  private activeSessionIds(): Set<string> {
+    return new Set(this.agents().map((a) => a.sessionId ?? a.id ?? "").filter(Boolean));
+  }
+
+  // id → live activity ("busy" | "idle" | "waiting" | "blocked").
+  sessionActivity(): Record<string, string> {
+    const m: Record<string, string> = {};
+    for (const a of this.agents()) {
+      const id = a.sessionId ?? a.id;
+      if (id) m[id] = a.status ?? a.state ?? "";
+    }
+    return m;
   }
 
   private claudeArgv(resumeFlag: string, id: string, mcpPath: string, fork = false): string[] {
