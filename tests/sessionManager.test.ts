@@ -97,13 +97,16 @@ test("connectRemote: types /remote-control + Enter into the session", () => {
   expect(sk.some((c) => c.args.includes("Enter"))).toBe(true);
 });
 
-test("connectRemote disconnect: opens the menu then presses Enter to pick Disconnect", () => {
+test("connectRemote disconnect: opens the menu, moves up to Disconnect, selects it", () => {
   const { mgr, runner } = setup();
   const e = mgr.launch("myapp");
   runner.calls.length = 0; // count only the disconnect interaction
   mgr.connectRemote(e.id, true);
-  const enters = runner.calls.filter((c) => c.cmd === "tmux" && c.args[0] === "send-keys" && c.args.includes("Enter"));
-  expect(enters.length).toBe(2); // run the command, then select Disconnect
+  const sk = runner.calls.filter((c) => c.cmd === "tmux" && c.args[0] === "send-keys");
+  const ups = sk.filter((c) => c.args.includes("Up"));
+  const enters = sk.filter((c) => c.args.includes("Enter"));
+  expect(ups.length).toBe(2); // from default "Continue" up to "Disconnect this session"
+  expect(enters.length).toBe(2); // run the command, then select
 });
 
 test("launch unknown project throws HttpError 400", () => {
