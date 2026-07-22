@@ -12,10 +12,12 @@ export interface DecisionRequest {
   context?: string;
   options: DecisionOption[];
   allow_freetext: boolean;
+  multi_select?: boolean; // true면 옵션을 여러 개 동시에 고를 수 있음
 }
 
 export interface DecisionAnswer {
-  choice?: number;
+  choice?: number; // 단일 선택
+  choices?: number[]; // 다중 선택 (multi_select 문항)
   memo?: string;
 }
 

@@ -33,6 +33,10 @@ const inputShape = {
     )
     .describe("객관식 옵션들"),
   allow_freetext: z.boolean().describe("메모 자유입력 허용 여부"),
+  multi_select: z
+    .boolean()
+    .optional()
+    .describe("여러 옵션을 동시에 고를 수 있는 문항이면 true. 답은 choices 배열로 온다"),
 };
 
 export function buildBridge(orchUrl: string, token: string): McpServer {
@@ -43,7 +47,9 @@ export function buildBridge(orchUrl: string, token: string): McpServer {
       title: "보스에게 결정 요청",
       description:
         "되돌리기 힘든/외부영향/제품 갈림길에서 멈추지 말고 이 툴로 맥락을 채워 올린다. " +
-        "보스가 폰 패널에서 번호/메모로 답할 때까지 블로킹되며, 답이 리턴된다.",
+        "여러 개를 동시에 고르는 문항이면 multi_select:true 로 올린다. " +
+        "보스가 폰 패널에서 답할 때까지 블로킹되며, 답이 리턴된다 " +
+        "(단일: {choice}, 다중: {choices:[...]}, 메모: {memo}).",
       inputSchema: inputShape,
     },
     async (args) => {
