@@ -63,9 +63,12 @@
   .scard .nm { flex: 1; font-size: 14px; font-weight: 600; color: #e8eaed; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .scard .nm.clickable { cursor: pointer; }
   .scard .nm.clickable:hover { text-decoration: underline; }
-  .scard .rc { font-size: 12px; }
+  .scard .rc { color: #7ee2a8; display: inline-flex; }
   .scard .badge { color: #f5a623; font-size: 13px; }
-  .scard .rename { border: 0; background: none; color: #6b727a; cursor: pointer; font-size: 13px; padding: 0 2px; }
+  .scard .rename { border: 0; background: none; color: #6b727a; cursor: pointer; padding: 0 2px; display: inline-flex; align-items: center; }
+  .scard .rename:hover { color: #c7ccd1; }
+  .ic { vertical-align: -3px; }
+  .scard .btns button .ic { vertical-align: -3px; margin-right: 1px; }
   .scard .del { border: 0; background: none; color: #6b727a; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; }
   .scard .del:hover { color: #f4718a; }
   .scard .pj { font-size: 11px; color: #6b727a; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -143,6 +146,12 @@
   let showAll = false;
   let allCache = [];
   const answered = new Set(); // just-answered decision ids (avoid re-adding before server drops them)
+
+  // 라인 아이콘 (이모지 대신)
+  const IC = {
+    edit: '<svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2 2 0 0 0-3-3L5 17v3Z"/><path d="M13.5 6.5l4 4"/></svg>',
+    remote: '<svg class="ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9a9 9 0 0 1 14 0"/><path d="M7.5 11.8a5.5 5.5 0 0 1 9 0"/><circle cx="12" cy="15.5" r="1.5" fill="currentColor" stroke="none"/></svg>',
+  };
 
   function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
@@ -278,7 +287,7 @@
   function sessionCard(s) {
     const running = s.status === "running";
     const badge = s.notice ? `<span class="badge" title="${esc(s.notice.message)}">⚠️</span>` : "";
-    const rc = running && s.remoteActive ? '<span class="rc" title="원격제어 연결됨 (Claude 앱)">📱</span>' : "";
+    const rc = running && s.remoteActive ? `<span class="rc" title="원격제어 연결됨 (Claude 앱)">${IC.remote}</span>` : "";
     const lbl = esc(s.label || s.tmuxName);
     const nameEl = running
       ? `<span class="nm clickable" data-act="fg" data-id="${esc(s.id)}" title="포그라운드로 전환(터미널 창)">${lbl}</span>`
@@ -288,13 +297,13 @@
       const term = s.terminalOpen
         ? `<button data-act="bg" data-id="${esc(s.id)}">⬇︎ 백그라운드</button>`
         : `<button class="go" data-act="fg" data-id="${esc(s.id)}">⬆︎ 포그라운드</button>`;
-      const remote = `<button data-act="remote" data-id="${esc(s.id)}" data-disconnect="${s.remoteActive ? "1" : "0"}">${s.remoteActive ? "📱 원격 해제" : "📱 원격 연결"}</button>`;
+      const remote = `<button data-act="remote" data-id="${esc(s.id)}" data-disconnect="${s.remoteActive ? "1" : "0"}">${IC.remote} ${s.remoteActive ? "원격 해제" : "원격 연결"}</button>`;
       btns = `${term}${remote}<button data-act="deactivate" data-id="${esc(s.id)}">⏸ 비활성화</button>`;
     } else {
       btns = `<button class="go" data-act="resume" data-id="${esc(s.id)}">▶ 활성화</button>`;
     }
     return `<div class="scard">
-        <div class="top"><span class="dot">${running ? "🟢" : "⚫"}</span>${nameEl}${rc}${badge}<button class="rename" data-act="rename" data-id="${esc(s.id)}" data-label="${esc(s.label || "")}">✏️</button><button class="del" data-act="terminate" data-id="${esc(s.id)}" data-label="${lbl}" title="프로젝트에서 삭제 (로컬 기록은 남음)">✕</button></div>
+        <div class="top"><span class="dot">${running ? "🟢" : "⚫"}</span>${nameEl}${rc}${badge}<button class="rename" data-act="rename" data-id="${esc(s.id)}" data-label="${esc(s.label || "")}" title="이름 변경">${IC.edit}</button><button class="del" data-act="terminate" data-id="${esc(s.id)}" data-label="${lbl}" title="프로젝트에서 삭제 (로컬 기록은 남음)">✕</button></div>
         <div class="pj">${esc(s.project)}</div>
         <div class="btns">${btns}</div>
       </div>`;
