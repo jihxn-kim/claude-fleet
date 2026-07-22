@@ -89,7 +89,7 @@ test("GET /api/decisions enriches with session {project,tmuxName}; /internal/not
   fetch(`${base}/internal/decisions`, { method: "POST", headers: { "content-type": "application/json", "x-fleet-session": a.id }, body: JSON.stringify({ title: "t", why_now: "w", payoff: "p", tradeoff: "tr", options: [{ n: 1, label: "x" }], allow_freetext: true }) }).catch(() => {});
   let pend: any[] = [];
   for (let i = 0; i < 50 && pend.length === 0; i++) { pend = await (await fetch(q(base, "/api/decisions"))).json(); if (!pend.length) await new Promise((r) => setTimeout(r, 10)); }
-  expect(pend[0].session).toEqual({ project: "myapp", tmuxName: a.tmuxName });
+  expect(pend[0].session).toEqual({ project: "myapp", projectPath: "/p/myapp", tmuxName: a.tmuxName });
   // creating the decision cleared the stuck notice
   list = await (await fetch(q(base, "/api/sessions"))).json();
   expect(list.find((s: any) => s.id === a.id).notice).toBeNull();

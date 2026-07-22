@@ -42,7 +42,7 @@ export function createServer(
     if (!sessions) return list;
     return list.map((d) => {
       const s = sessions.store.getSession(d.sessionToken);
-      return { ...d, session: s ? { project: s.project, tmuxName: s.tmuxName, label: s.label } : null };
+      return { ...d, session: s ? { project: s.project, projectPath: s.projectPath, tmuxName: s.tmuxName, label: s.label } : null };
     });
   }
   function enrichSessions(): unknown[] {
