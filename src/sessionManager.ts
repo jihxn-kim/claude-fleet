@@ -204,8 +204,36 @@ export class SessionManager {
   // and mouse mode on so the transcript can be scrolled when attached.
   private spawnTmux(tmuxName: string, cwd: string, argv: string[]): void {
     this.o.runner.run("tmux", ["new-session", "-d", "-s", tmuxName, "-c", cwd, "-e", "COLORTERM=truecolor", "claude", ...argv]);
+    this.ensureServerOpts();
     try {
       this.o.runner.run("tmux", ["set-option", "-t", tmuxName, "mouse", "on"]);
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  // Make tmux transparent to claude's native terminal behavior:
+  //  - extended-keys on + the extkeys feature → Shift+Enter reaches claude as a
+  //    real newline instead of collapsing to a plain Enter (submit).
+  //  - the RGB feature → 24-bit color themes render correctly.
+  // Server-level options, so this only needs to run once per tmux server.
+  private serverOptsEnsured = false;
+  private ensureServerOpts(): void {
+    if (this.serverOptsEnsured) return;
+    this.serverOptsEnsured = true;
+    try {
+      this.o.runner.run("tmux", ["set-option", "-s", "extended-keys", "on"]);
+      let features = "";
+      try {
+        features = this.o.runner.run("tmux", ["show-options", "-s", "-v", "terminal-features"]);
+      } catch {
+        features = "";
+      }
+      for (const feat of ["RGB", "extkeys"]) {
+        if (!features.includes(feat)) {
+          this.o.runner.run("tmux", ["set-option", "-sa", "terminal-features", `xterm*:${feat}`]);
+        }
+      }
     } catch {
       /* best-effort */
     }
