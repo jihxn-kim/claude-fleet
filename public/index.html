@@ -39,25 +39,29 @@
   textarea { width: 100%; background: #1e2228; border: 1px solid #2b3038; border-radius: 12px; color: #e8eaed; padding: 12px; font: inherit; min-height: 60px; margin-top: 8px; }
   .send { margin-top: 10px; width: 100%; border: 0; border-radius: 12px; background: #d2603a; color: #fff; font-size: 16px; font-weight: 700; padding: 14px; cursor: pointer; }
 
-  /* 보드 (작업중 | 완료) */
-  .board { display: flex; gap: 10px; align-items: flex-start; }
-  .col { flex: 1 1 0; min-width: 0; background: #101317; border-radius: 14px; padding: 10px; }
+  /* 보드 (작업중 | 완료 | 비활성화) */
+  .board { display: flex; gap: 10px; align-items: flex-start; overflow-x: auto; padding-bottom: 4px; }
+  .col { flex: 1 1 0; min-width: 190px; background: #101317; border-radius: 14px; padding: 10px; }
   .col-head { font-size: 13px; font-weight: 700; color: #cfd4da; margin: 2px 4px 10px; display: flex; align-items: center; gap: 6px; }
   .col-head .n { background: #23272e; color: #c7ccd1; border-radius: 999px; font-size: 11px; padding: 1px 7px; font-weight: 700; }
   .col.busy .col-head { color: #6ab0ff; }
   .col.idle .col-head { color: #7ee2a8; }
+  .col.off .col-head { color: #6b727a; }
   .scard { background: #16191d; border-radius: 12px; padding: 12px; margin-bottom: 8px; }
+  .col.off .scard { opacity: .72; }
   .scard .top { display: flex; align-items: center; gap: 6px; }
   .scard .dot { font-size: 9px; }
   .scard .nm { flex: 1; font-size: 14px; font-weight: 600; color: #e8eaed; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .scard .nm.clickable { cursor: pointer; }
   .scard .nm.clickable:hover { text-decoration: underline; }
+  .scard .rc { font-size: 12px; }
   .scard .badge { color: #f5a623; font-size: 13px; }
   .scard .rename { border: 0; background: none; color: #6b727a; cursor: pointer; font-size: 13px; padding: 0 2px; }
+  .scard .del { border: 0; background: none; color: #6b727a; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; }
+  .scard .del:hover { color: #f4718a; }
   .scard .pj { font-size: 11px; color: #6b727a; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .scard .btns { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
   .scard .btns button { flex: 1 1 auto; border: 0; border-radius: 8px; background: #23272e; color: #e8eaed; padding: 8px 6px; font-size: 12px; cursor: pointer; }
-  .scard .btns button.kill { background: #3a1e1e; color: #f4718a; }
   .scard .btns button.go { background: #1e2f22; color: #7ee2a8; }
 
   /* 새 세션 런처 */
@@ -103,6 +107,7 @@
     <div class="board">
       <div class="col busy"><div class="col-head">🔵 작업중 <span class="n" id="n-busy">0</span></div><div id="col-busy"></div></div>
       <div class="col idle"><div class="col-head">✅ 완료 <span class="n" id="n-idle">0</span></div><div id="col-idle"></div></div>
+      <div class="col off"><div class="col-head">⚫ 비활성화 <span class="n" id="n-off">0</span></div><div id="col-off"></div></div>
     </div>
     <div class="launcher" id="launcher"></div>
   </div>
@@ -230,27 +235,38 @@
   function sessionCard(s) {
     const running = s.status === "running";
     const badge = s.notice ? `<span class="badge" title="${esc(s.notice.message)}">⚠️</span>` : "";
+    const rc = running && s.remoteActive ? '<span class="rc" title="원격제어 연결됨 (Claude 앱)">📱</span>' : "";
+    const lbl = esc(s.label || s.tmuxName);
     const nameEl = running
-      ? `<span class="nm clickable" data-act="open" data-id="${esc(s.id)}" title="클릭하면 터미널로 이동">${esc(s.label || s.tmuxName)}</span>`
-      : `<span class="nm">${esc(s.label || s.tmuxName)}</span>`;
-    const btns = running
-      ? `<button class="go" data-act="open" data-id="${esc(s.id)}">열기</button><button class="kill" data-act="close" data-id="${esc(s.id)}">닫기</button>`
-      : `<button class="go" data-act="resume" data-id="${esc(s.id)}">재개</button>`;
+      ? `<span class="nm clickable" data-act="fg" data-id="${esc(s.id)}" title="포그라운드로 전환(터미널 창)">${lbl}</span>`
+      : `<span class="nm">${lbl}</span>`;
+    let btns;
+    if (running) {
+      const term = s.terminalOpen
+        ? `<button data-act="bg" data-id="${esc(s.id)}">⬇︎ 백그라운드</button>`
+        : `<button class="go" data-act="fg" data-id="${esc(s.id)}">⬆︎ 포그라운드</button>`;
+      const remote = `<button data-act="remote" data-id="${esc(s.id)}">${s.remoteActive ? "📱 원격 해제" : "📱 원격 연결"}</button>`;
+      btns = `${term}${remote}<button data-act="deactivate" data-id="${esc(s.id)}">⏸ 비활성화</button>`;
+    } else {
+      btns = `<button class="go" data-act="resume" data-id="${esc(s.id)}">▶ 활성화</button>`;
+    }
     return `<div class="scard">
-        <div class="top"><span class="dot">${running ? "🟢" : "⚪️"}</span>${nameEl}${badge}<button class="rename" data-act="rename" data-id="${esc(s.id)}" data-label="${esc(s.label || "")}">✏️</button></div>
+        <div class="top"><span class="dot">${running ? "🟢" : "⚫"}</span>${nameEl}${rc}${badge}<button class="rename" data-act="rename" data-id="${esc(s.id)}" data-label="${esc(s.label || "")}">✏️</button><button class="del" data-act="terminate" data-id="${esc(s.id)}" data-label="${lbl}" title="프로젝트에서 삭제 (로컬 기록은 남음)">✕</button></div>
         <div class="pj">${esc(s.project)}</div>
         <div class="btns">${btns}</div>
       </div>`;
   }
   function renderBoard(sessions) {
     const busy = sessions.filter((s) => s.status === "running" && s.activity === "busy");
-    const rest = sessions.filter((s) => !(s.status === "running" && s.activity === "busy"));
-    const cb = document.getElementById("col-busy");
-    const ci = document.getElementById("col-idle");
-    cb.innerHTML = busy.length ? busy.map(sessionCard).join("") : '<div class="empty">없음</div>';
-    ci.innerHTML = rest.length ? rest.map(sessionCard).join("") : '<div class="empty">없음</div>';
-    document.getElementById("n-busy").textContent = busy.length;
-    document.getElementById("n-idle").textContent = rest.length;
+    const idle = sessions.filter((s) => s.status === "running" && s.activity !== "busy");
+    const off = sessions.filter((s) => s.status !== "running");
+    const fill = (colId, nId, list) => {
+      document.getElementById(colId).innerHTML = list.length ? list.map(sessionCard).join("") : '<div class="empty">없음</div>';
+      document.getElementById(nId).textContent = list.length;
+    };
+    fill("col-busy", "n-busy", busy);
+    fill("col-idle", "n-idle", idle);
+    fill("col-off", "n-off", off);
     document.querySelectorAll(".board [data-act]").forEach((b) => b.addEventListener("click", () => sessionAction(b.dataset)));
   }
   function renderLauncher(projects) {
@@ -262,8 +278,14 @@
   async function sessionAction(d) {
     if (d.act === "new") await fetch(q("/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: d.proj }) });
     else if (d.act === "resume") await fetch(q(`/api/sessions/${d.id}/resume`), { method: "POST" });
-    else if (d.act === "close") await fetch(q(`/api/sessions/${d.id}/close`), { method: "POST" });
-    else if (d.act === "open") await fetch(q(`/api/sessions/${d.id}/open-terminal`), { method: "POST" });
+    else if (d.act === "deactivate") await fetch(q(`/api/sessions/${d.id}/close`), { method: "POST" });
+    else if (d.act === "fg") await fetch(q(`/api/sessions/${d.id}/open-terminal`), { method: "POST" });
+    else if (d.act === "bg") await fetch(q(`/api/sessions/${d.id}/background-terminal`), { method: "POST" });
+    else if (d.act === "remote") await fetch(q(`/api/sessions/${d.id}/remote-control`), { method: "POST" });
+    else if (d.act === "terminate") {
+      if (!confirm(`'${d.label || d.id}' 을(를) 프로젝트에서 삭제할까요?\n실행 중이면 종료돼요. 로컬 대화기록은 남아서 나중에 '기존 세션 가져오기'로 되살릴 수 있어요.`)) return;
+      await fetch(q(`/api/sessions/${d.id}/terminate`), { method: "POST" });
+    }
     else if (d.act === "rename") {
       const name = prompt("세션 이름:", d.label || "");
       if (name === null) return;

@@ -48,7 +48,13 @@ export function createServer(
   function enrichSessions(): unknown[] {
     if (!sessions) return [];
     const activity = sessions.sessionActivity();
-    return sessions.store.listSessions().map((s) => ({ ...s, notice: notices.get(s.id) ?? null, activity: activity[s.id] ?? null }));
+    return sessions.store.listSessions().map((s) => ({
+      ...s,
+      notice: notices.get(s.id) ?? null,
+      activity: activity[s.id] ?? null,
+      terminalOpen: sessions.terminalOpen(s.id),
+      remoteActive: sessions.remoteActive(s.id),
+    }));
   }
   function sendHttpError(res: ServerResponse, err: unknown): void {
     if (err instanceof HttpError) send(res, err.status, { error: err.message });
@@ -162,13 +168,19 @@ export function createServer(
             return sendHttpError(res, e);
           }
         }
-        const sm = path.match(/^\/api\/sessions\/([^/]+)\/(resume|close|open-terminal|label)$/);
+        const sm = path.match(/^\/api\/sessions\/([^/]+)\/(resume|close|open-terminal|background-terminal|terminate|remote-control|label)$/);
         if (sm && method === "POST") {
           if (!sessions) return send(res, 404, { error: "sessions disabled" });
           try {
             const id = sm[1];
             if (sm[2] === "resume") return send(res, 200, sessions.resume(id));
             if (sm[2] === "close") return send(res, 200, sessions.close(id));
+            if (sm[2] === "terminate") return send(res, 200, sessions.terminate(id));
+            if (sm[2] === "remote-control") return send(res, 200, sessions.connectRemote(id));
+            if (sm[2] === "background-terminal") {
+              sessions.backgroundTerminal(id);
+              return send(res, 200, { ok: true });
+            }
             if (sm[2] === "label") {
               const { label } = (await readJson(req)) as { label: string };
               return send(res, 200, sessions.setLabel(id, label));

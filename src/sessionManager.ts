@@ -343,6 +343,76 @@ export class SessionManager {
     }
   }
 
+  // Send a running session back to the background: detach its terminal and close the
+  // window. The tmux session (and claude) keep running headless.
+  backgroundTerminal(id: string): void {
+    const s = this.o.store.getSession(id);
+    if (!s) throw new HttpError(404, `no session ${id}`);
+    let tty = "";
+    try {
+      tty = this.o.runner.run("tmux", ["list-clients", "-t", s.tmuxName, "-F", "#{client_tty}"]).trim().split("\n")[0] ?? "";
+    } catch {
+      tty = "";
+    }
+    if (!tty) return; // nothing attached → already in background
+    try {
+      this.o.runner.run("tmux", ["detach-client", "-s", s.tmuxName]); // no running job → close won't prompt
+    } catch {
+      /* fine */
+    }
+    const term = this.getTerminal();
+    try {
+      if (term === "iterm") {
+        this.o.runner.run("osascript", [
+          "-e", `tell application "iTerm"`,
+          "-e", `repeat with w in windows`,
+          "-e", `repeat with tb in tabs of w`,
+          "-e", `repeat with ss in sessions of tb`,
+          "-e", `if tty of ss is "${tty}" then close w`,
+          "-e", `end repeat`,
+          "-e", `end repeat`,
+          "-e", `end repeat`,
+          "-e", `end tell`,
+        ]);
+      } else if (term === "terminal") {
+        this.o.runner.run("osascript", [
+          "-e", `tell application "Terminal"`,
+          "-e", `repeat with w in windows`,
+          "-e", `repeat with tb in tabs of w`,
+          "-e", `if tty of tb is "${tty}" then close w`,
+          "-e", `end repeat`,
+          "-e", `end tell`,
+        ]);
+      }
+    } catch {
+      /* window already gone — session is detached either way */
+    }
+  }
+
+  // Terminate a session: kill its tmux (stops claude) and drop it from the fleet.
+  // The on-disk transcript stays, so it can be re-imported from 관리 later.
+  terminate(id: string): { ok: boolean } {
+    const s = this.o.store.getSession(id);
+    if (!s) throw new HttpError(404, `no session ${id}`);
+    try {
+      this.o.runner.run("tmux", ["kill-session", "-t", s.tmuxName]);
+    } catch {
+      /* already gone */
+    }
+    this.o.store.removeSession(id);
+    return { ok: true };
+  }
+
+  // Fire Claude's native /remote-control in the session so it can be driven from the
+  // Claude mobile app / claude.ai/code (full typing, not just fleet's decision cards).
+  connectRemote(id: string): { ok: boolean } {
+    const s = this.o.store.getSession(id);
+    if (!s) throw new HttpError(404, `no session ${id}`);
+    this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, "-l", "/remote-control"]);
+    this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, "Enter"]);
+    return { ok: true };
+  }
+
   reconcile(): void {
     const live = new Set(this.liveFleetSessions());
     for (const s of this.o.store.listSessions()) {
@@ -505,38 +575,62 @@ export class SessionManager {
   // attach), survives --fork-session id changes, and doesn't depend on any UI wording.
   private paneSig = new Map<string, string>(); // id → last sampled bottom-of-pane
   private activityMap: Record<string, string> = {}; // id → "busy" | "idle"
+  private terminalMap: Record<string, boolean> = {}; // id → a terminal window is attached
+  private remoteMap: Record<string, boolean> = {}; // id → /remote-control is active
 
   // Sample every running session once. Called on a fixed interval by the server, so
-  // detection cadence is independent of how many panels are polling.
+  // detection cadence is independent of how many panels are polling. In one pass it
+  // derives: busy/idle (screen changed since last sample), whether a terminal window
+  // is attached (tmux clients), and whether Claude's native remote-control is on.
   sampleActivity(): void {
     const next: Record<string, string> = {};
+    const term: Record<string, boolean> = {};
+    const remote: Record<string, boolean> = {};
     const seen = new Set<string>();
     for (const s of this.o.store.listSessions()) {
       if (s.status !== "running") continue;
       seen.add(s.id);
-      let sig: string | null = null;
+      let pane: string | null = null;
       try {
-        const pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
-        sig = pane.split("\n").slice(-12).join("\n");
+        pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
       } catch {
-        /* tmux session gone → idle, forget its signature */
+        /* tmux session gone */
       }
-      if (sig === null) {
+      if (pane === null) {
         this.paneSig.delete(s.id);
         next[s.id] = "idle";
+        term[s.id] = false;
+        remote[s.id] = false;
         continue;
       }
+      const sig = pane.split("\n").slice(-12).join("\n");
       const prev = this.paneSig.get(s.id);
       next[s.id] = prev !== undefined && sig !== prev ? "busy" : "idle";
       this.paneSig.set(s.id, sig);
+      remote[s.id] = /remote-control is active/i.test(pane);
+      let clients = "";
+      try {
+        clients = this.o.runner.run("tmux", ["list-clients", "-t", s.tmuxName]).trim();
+      } catch {
+        clients = "";
+      }
+      term[s.id] = clients.length > 0;
     }
     for (const id of [...this.paneSig.keys()]) if (!seen.has(id)) this.paneSig.delete(id);
     this.activityMap = next;
+    this.terminalMap = term;
+    this.remoteMap = remote;
   }
 
-  // id → live activity, from the most recent sample (cheap; no shelling out here).
+  // Read the most recent sample (cheap; no shelling out here).
   sessionActivity(): Record<string, string> {
     return this.activityMap;
+  }
+  terminalOpen(id: string): boolean {
+    return this.terminalMap[id] ?? false;
+  }
+  remoteActive(id: string): boolean {
+    return this.remoteMap[id] ?? false;
   }
 
   private claudeArgv(resumeFlag: string, id: string, mcpPath: string, fork = false): string[] {

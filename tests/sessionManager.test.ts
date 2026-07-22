@@ -80,6 +80,24 @@ test("sessionActivity: only running sessions get a value", () => {
   expect(mgr.sessionActivity()[e.id]).toBeUndefined();
 });
 
+test("terminate: kills tmux and removes the session from the store", () => {
+  const { mgr, store, runner } = setup();
+  const e = mgr.launch("myapp");
+  expect(store.getSession(e.id)).toBeDefined();
+  mgr.terminate(e.id);
+  expect(runner.calls.some((c) => c.cmd === "tmux" && c.args[0] === "kill-session" && c.args.includes(e.tmuxName))).toBe(true);
+  expect(store.getSession(e.id)).toBeUndefined();
+});
+
+test("connectRemote: types /remote-control + Enter into the session", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  mgr.connectRemote(e.id);
+  const sk = runner.calls.filter((c) => c.cmd === "tmux" && c.args[0] === "send-keys" && c.args.includes(e.tmuxName));
+  expect(sk.some((c) => c.args.includes("/remote-control"))).toBe(true);
+  expect(sk.some((c) => c.args.includes("Enter"))).toBe(true);
+});
+
 test("launch unknown project throws HttpError 400", () => {
   const { mgr } = setup();
   expect(() => mgr.launch("nope")).toThrowError(expect.objectContaining({ status: 400 }));

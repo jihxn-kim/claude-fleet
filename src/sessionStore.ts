@@ -54,6 +54,13 @@ export class SessionStore {
     else all.push(entry);
     writeJson(this.sessionsPath, all);
   }
+  removeSession(id: string): boolean {
+    const all = this.listSessions();
+    const next = all.filter((s) => s.id !== id);
+    if (next.length === all.length) return false;
+    writeJson(this.sessionsPath, next);
+    return true;
+  }
   setStatus(id: string, status: SessionStatus): SessionEntry | undefined {
     const all = this.listSessions();
     const s = all.find((x) => x.id === id);
