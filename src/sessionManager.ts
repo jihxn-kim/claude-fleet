@@ -377,6 +377,15 @@ export class SessionManager {
     return out;
   }
 
+  // Set a user-friendly name for a session (shown in the panel).
+  setLabel(id: string, label: string): SessionEntry {
+    const s = this.o.store.getSession(id);
+    if (!s) throw new HttpError(404, `no session ${id}`);
+    s.label = label;
+    this.o.store.upsert(s);
+    return s;
+  }
+
   // Adopt a session found by scanRecent — auto-registers its project by path.
   adoptByPath(id: string, path: string): SessionEntry {
     const existing = this.o.store.listProjects().find((p) => p.path === path);

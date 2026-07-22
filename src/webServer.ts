@@ -42,7 +42,7 @@ export function createServer(
     if (!sessions) return list;
     return list.map((d) => {
       const s = sessions.store.getSession(d.sessionToken);
-      return { ...d, session: s ? { project: s.project, tmuxName: s.tmuxName } : null };
+      return { ...d, session: s ? { project: s.project, tmuxName: s.tmuxName, label: s.label } : null };
     });
   }
   function enrichSessions(): unknown[] {
@@ -161,13 +161,17 @@ export function createServer(
             return sendHttpError(res, e);
           }
         }
-        const sm = path.match(/^\/api\/sessions\/([^/]+)\/(resume|close|open-terminal)$/);
+        const sm = path.match(/^\/api\/sessions\/([^/]+)\/(resume|close|open-terminal|label)$/);
         if (sm && method === "POST") {
           if (!sessions) return send(res, 404, { error: "sessions disabled" });
           try {
             const id = sm[1];
             if (sm[2] === "resume") return send(res, 200, sessions.resume(id));
             if (sm[2] === "close") return send(res, 200, sessions.close(id));
+            if (sm[2] === "label") {
+              const { label } = (await readJson(req)) as { label: string };
+              return send(res, 200, sessions.setLabel(id, label));
+            }
             sessions.openTerminal(id);
             return send(res, 200, { ok: true });
           } catch (e) {

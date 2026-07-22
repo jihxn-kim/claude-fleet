@@ -36,6 +36,7 @@ export interface SessionEntry {
   status: SessionStatus;
   startedAt: string;
   lastSeen: string;
+  label?: string; // user-friendly name shown in the panel
 }
 
 export interface ProjectEntry {

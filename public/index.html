@@ -93,7 +93,7 @@
     root.innerHTML = `
       <div class="card">
         <p class="title">${esc(r.title)}</p>
-        ${item.session ? `<p class="who">▸ ${esc(item.session.project)} · ${esc(item.session.tmuxName)}</p>` : ""}
+        ${item.session ? `<p class="who">▸ ${item.session.label ? esc(item.session.label) : esc(item.session.project + " · " + item.session.tmuxName)}</p>` : ""}
         <div class="sec-label">지금 왜?</div><p class="sec">${esc(r.why_now)}</p>
         <div class="sec-label">THE PAYOFF</div><p class="sec payoff">${esc(r.payoff)}</p>
         <div class="sec-label">트레이드오프</div><p class="sec">${esc(r.tradeoff)}</p>
@@ -138,7 +138,7 @@
         const btns = running
           ? `<button data-act="open" data-id="${esc(s.id)}">맥에서 열기</button><button class="kill" data-act="close" data-id="${esc(s.id)}">닫기</button>`
           : `<button data-act="resume" data-id="${esc(s.id)}">resume</button>`;
-        return `<div class="srow"><span class="dot">${running ? "🟢" : "⚪️"}</span><span class="name">${esc(s.tmuxName)}</span>${badge}${btns}</div>`;
+        return `<div class="srow"><span class="dot">${running ? "🟢" : "⚪️"}</span><span class="name">${esc(s.label || s.tmuxName)}</span>${badge}<button data-act="rename" data-id="${esc(s.id)}" data-label="${esc(s.label || "")}">✏️</button>${btns}</div>`;
       }).join("");
       return `<div class="proj"><h3>${esc(p.name)}</h3>${rows}<div class="srow"><button class="newbtn" data-act="new" data-proj="${esc(p.name)}">+ 새 세션</button></div></div>`;
     }).join("");
@@ -149,6 +149,11 @@
     else if (d.act === "resume") await fetch(q(`/api/sessions/${d.id}/resume`), { method: "POST" });
     else if (d.act === "close") await fetch(q(`/api/sessions/${d.id}/close`), { method: "POST" });
     else if (d.act === "open") await fetch(q(`/api/sessions/${d.id}/open-terminal`), { method: "POST" });
+    else if (d.act === "rename") {
+      const name = prompt("세션 이름:", d.label || "");
+      if (name === null) return;
+      await fetch(q(`/api/sessions/${d.id}/label`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: name.trim() }) });
+    }
     else if (d.act === "adopt-path") {
       if (d.running === "1" && !confirm("이 세션 지금 실행 중이에요.\n원래 터미널을 먼저 닫았나요? 안 닫으면 충돌해요.")) return;
       await fetch(q("/api/sessions/adopt"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: d.id, projectPath: d.path }) });
