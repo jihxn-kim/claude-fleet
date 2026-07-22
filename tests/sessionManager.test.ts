@@ -59,16 +59,15 @@ test("launch: writes mcp config, runs tmux new-session with claude --session-id,
   expect(store.getSession(e.id)!.status).toBe("running");
 });
 
-test("sampleActivity: busy when the screen changes between samples, idle when static", () => {
+test("sampleActivity: busy when the status line shows 'esc to interrupt', else idle", () => {
   const { mgr, runner } = setup();
   const e = mgr.launch("myapp"); // running session
-  runner.paneContent = "conversation\n(3s · esc to interrupt)";
-  mgr.sampleActivity(); // first sample → idle (no prior to diff against)
-  expect(mgr.sessionActivity()[e.id]).toBe("idle");
-  runner.paneContent = "conversation\n(5s · esc to interrupt)"; // spinner counter advanced
+  runner.paneContent = "some output\n  auto mode on · esc to interrupt · 5 agents";
   mgr.sampleActivity();
   expect(mgr.sessionActivity()[e.id]).toBe("busy");
-  mgr.sampleActivity(); // unchanged screen → idle
+  // typing at the idle prompt changes the screen but shows no "esc to interrupt"
+  runner.paneContent = "some output\n╭─────╮\n│ > /remo │\n╰─────╯\n  auto mode on (shift+tab to cycle) · 5 agents";
+  mgr.sampleActivity();
   expect(mgr.sessionActivity()[e.id]).toBe("idle");
 });
 

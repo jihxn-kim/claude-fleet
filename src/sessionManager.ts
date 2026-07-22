@@ -415,7 +415,7 @@ export class SessionManager {
     // keystrokes just pile up in the input box unexecuted. Refuse with a clear message.
     let busy = false;
     try {
-      busy = /esc to interrupt/i.test(this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]));
+      busy = this.paneShowsBusy(this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]));
     } catch {
       /* can't read → assume idle */
     }
@@ -594,28 +594,30 @@ export class SessionManager {
     return new Set(this.agents().map((a) => a.sessionId ?? a.id ?? "").filter(Boolean));
   }
 
-  // Activity detection by screen diff: a working claude keeps redrawing its spinner
-  // (an elapsed-seconds counter that ticks every second), so its pane content changes
-  // between samples; an idle one at the prompt is static. This reads what's actually
-  // on screen, works for detached sessions (tmux updates the pane buffer regardless of
-  // attach), survives --fork-session id changes, and doesn't depend on any UI wording.
-  private paneSig = new Map<string, string>(); // id → last sampled bottom-of-pane
   private activityMap: Record<string, string> = {}; // id → "busy" | "idle"
   private terminalMap: Record<string, boolean> = {}; // id → a terminal window is attached
   private remoteMap: Record<string, boolean> = {}; // id → /remote-control is active
 
+  // A session is "busy" only while claude is actively generating or running a tool —
+  // exactly when its status line shows "esc to interrupt". That line is stable through a
+  // turn (no flicker) and, crucially, is NOT shown while you're merely typing at the
+  // idle prompt. Only the bottom lines are checked so conversation text that happens to
+  // mention "interrupt" can't cause a false positive. Works for detached sessions and
+  // survives --fork-session id changes (it reads the screen, not a session file).
+  private paneShowsBusy(pane: string): boolean {
+    return /esc to interrupt/i.test(pane.split("\n").slice(-8).join("\n"));
+  }
+
   // Sample every running session once. Called on a fixed interval by the server, so
   // detection cadence is independent of how many panels are polling. In one pass it
-  // derives: busy/idle (screen changed since last sample), whether a terminal window
-  // is attached (tmux clients), and whether Claude's native remote-control is on.
+  // derives busy/idle, whether a terminal window is attached (tmux clients), and whether
+  // Claude's native remote-control is on.
   sampleActivity(): void {
     const next: Record<string, string> = {};
     const term: Record<string, boolean> = {};
     const remote: Record<string, boolean> = {};
-    const seen = new Set<string>();
     for (const s of this.o.store.listSessions()) {
       if (s.status !== "running") continue;
-      seen.add(s.id);
       let pane: string | null = null;
       try {
         pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
@@ -623,16 +625,12 @@ export class SessionManager {
         /* tmux session gone */
       }
       if (pane === null) {
-        this.paneSig.delete(s.id);
         next[s.id] = "idle";
         term[s.id] = false;
         remote[s.id] = false;
         continue;
       }
-      const sig = pane.split("\n").slice(-12).join("\n");
-      const prev = this.paneSig.get(s.id);
-      next[s.id] = prev !== undefined && sig !== prev ? "busy" : "idle";
-      this.paneSig.set(s.id, sig);
+      next[s.id] = this.paneShowsBusy(pane) ? "busy" : "idle";
       remote[s.id] = /remote-control is active/i.test(pane);
       let clients = "";
       try {
@@ -642,7 +640,6 @@ export class SessionManager {
       }
       term[s.id] = clients.length > 0;
     }
-    for (const id of [...this.paneSig.keys()]) if (!seen.has(id)) this.paneSig.delete(id);
     this.activityMap = next;
     this.terminalMap = term;
     this.remoteMap = remote;
