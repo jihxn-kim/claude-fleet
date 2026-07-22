@@ -296,24 +296,37 @@ export class SessionManager {
     const attach = `tmux attach -t ${s.tmuxName}`; // tmuxName is slug-safe, no injection
     const term = this.getTerminal();
     if (term === "iterm") {
-      // iTerm2 tmux integration: `-CC` renders the tmux window as a NATIVE iTerm window,
-      // so scroll / drag-select / click / clipboard are all native (no tmux copy-mode).
-      // If a client is already attached, the native window exists — just bring iTerm
-      // forward; otherwise open a control-mode connection which spawns the window.
-      let attached = false;
+      // If a terminal is already attached to this tmux session, focus that window
+      // (matched by the client's tty); otherwise open a new one. Plain `tmux attach`
+      // (not -CC) so it works uniformly across terminals and windows stay tidy.
+      let tty = "";
       try {
-        attached = this.o.runner.run("tmux", ["list-clients", "-t", s.tmuxName]).trim().length > 0;
+        tty = this.o.runner.run("tmux", ["list-clients", "-t", s.tmuxName, "-F", "#{client_tty}"]).trim().split("\n")[0] ?? "";
       } catch {
-        attached = false;
+        tty = "";
       }
-      if (attached) {
-        this.o.runner.run("osascript", ["-e", `tell application "iTerm" to activate`]);
+      if (tty) {
+        this.o.runner.run("osascript", [
+          "-e", `tell application "iTerm"`,
+          "-e", `activate`,
+          "-e", `repeat with w in windows`,
+          "-e", `repeat with tb in tabs of w`,
+          "-e", `repeat with ss in sessions of tb`,
+          "-e", `if tty of ss is "${tty}" then`,
+          "-e", `select w`,
+          "-e", `select tb`,
+          "-e", `end if`,
+          "-e", `end repeat`,
+          "-e", `end repeat`,
+          "-e", `end repeat`,
+          "-e", `end tell`,
+        ]);
       } else {
         this.o.runner.run("osascript", [
           "-e", `tell application "iTerm"`,
           "-e", `activate`,
           "-e", `set nw to (create window with default profile)`,
-          "-e", `tell current session of nw to write text "tmux -CC attach -t ${s.tmuxName}"`,
+          "-e", `tell current session of nw to write text "${attach}"`,
           "-e", `end tell`,
         ]);
       }
