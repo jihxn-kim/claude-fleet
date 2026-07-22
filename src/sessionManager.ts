@@ -189,8 +189,7 @@ export class SessionManager {
     if (this.o.store.runningCount(project) >= 2) throw new HttpError(409, `max 2 running for ${project}`);
     const id = this.genId();
     const tmuxName = `fleet__${slug(project)}__${id.slice(0, 6)}`;
-    const mcpPath = this.writeMcpConfig(id);
-    this.spawnTmux(tmuxName, proj.path, this.claudeArgv("--session-id", id, mcpPath));
+    this.spawnTmux(tmuxName, proj.path, this.claudeArgv("--session-id", id));
     const entry: SessionEntry = {
       id, project, projectPath: proj.path, tmuxName,
       status: "running", startedAt: this.now(), lastSeen: this.now(),
@@ -244,8 +243,7 @@ export class SessionManager {
     if (!s) throw new HttpError(404, `no session ${id}`);
     if (s.status === "running") throw new HttpError(409, `session ${id} already running`);
     if (this.o.store.runningCount(s.project) >= 2) throw new HttpError(409, `max 2 running for ${s.project}`);
-    const mcpPath = this.writeMcpConfig(id);
-    this.spawnTmux(s.tmuxName, s.projectPath, this.claudeArgv("--resume", id, mcpPath, this.activeSessionIds().has(id)));
+    this.spawnTmux(s.tmuxName, s.projectPath, this.claudeArgv("--resume", id, this.activeSessionIds().has(id)));
     s.status = "running";
     s.startedAt = this.now();
     s.lastSeen = this.now();
@@ -510,8 +508,7 @@ export class SessionManager {
     const file = join(this.o.claudeProjectsDir, encodeProjectDir(proj.path), `${id}.jsonl`);
     if (!existsSync(file)) throw new HttpError(404, `no session ${id} in project ${project}`);
     const tmuxName = `fleet__${slug(project)}__${id.slice(0, 6)}`;
-    const mcpPath = this.writeMcpConfig(id);
-    this.spawnTmux(tmuxName, proj.path, this.claudeArgv("--resume", id, mcpPath, this.activeSessionIds().has(id)));
+    this.spawnTmux(tmuxName, proj.path, this.claudeArgv("--resume", id, this.activeSessionIds().has(id)));
     const entry: SessionEntry = {
       id, project, projectPath: proj.path, tmuxName,
       status: "running", startedAt: this.now(), lastSeen: this.now(),
@@ -878,34 +875,18 @@ export class SessionManager {
     return { ok: true };
   }
 
-  private claudeArgv(resumeFlag: string, id: string, mcpPath: string, fork = false): string[] {
+  private claudeArgv(resumeFlag: string, id: string, fork = false): string[] {
     // Resuming a session that's live as a background agent fails ("currently
     // running as a background agent"); --fork-session branches a copy only
     // then. A non-running session resumes in place (same id, no duplicate).
     const head = resumeFlag === "--resume" && fork ? [resumeFlag, id, "--fork-session"] : [resumeFlag, id];
+    // No --mcp-config/--strict-mcp-config: decisions now use native AskUserQuestion
+    // (see fleet-rule.txt), so the session keeps the user's own MCP servers and normal
+    // permission setup — it behaves like a plain claude, plus the fleet rule.
     return [
       ...head,
       "--permission-mode", this.getPermissionMode(),
       "--append-system-prompt", this.o.ruleText,
-      "--mcp-config", mcpPath,
-      "--strict-mcp-config",
-      "--allowedTools", "mcp__fleet__request_decision",
     ];
-  }
-
-  private writeMcpConfig(id: string): string {
-    const path = join(this.o.mcpDir, `${id}.json`);
-    const cfg = {
-      mcpServers: {
-        fleet: {
-          command: join(this.o.repoRoot, "node_modules/.bin/tsx"),
-          args: [join(this.o.repoRoot, "src/mcpBridge.ts")],
-          env: { FLEET_URL: this.o.orchUrl, FLEET_SESSION_TOKEN: id },
-        },
-      },
-    };
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(cfg, null, 2));
-    return path;
   }
 }

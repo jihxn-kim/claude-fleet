@@ -34,28 +34,21 @@ function setup(projects: Record<string, string> = { myapp: "/p/myapp" }) {
   return { store, runner, mgr, dir };
 }
 
-test("launch: writes mcp config, runs tmux new-session with claude --session-id, registers running", () => {
-  const { store, runner, mgr, dir } = setup();
+test("launch: runs tmux new-session with claude --session-id (no MCP flags — keeps user's own MCPs), registers running", () => {
+  const { store, runner, mgr } = setup();
   const e = mgr.launch("myapp");
   expect(e.status).toBe("running");
   expect(e.project).toBe("myapp");
   expect(e.tmuxName).toBe("fleet__myapp__uuid10"); // slug + first6 of "uuid10000"
-  // mcp config written
-  const cfgPath = join(dir, "mcp", `${e.id}.json`);
-  expect(existsSync(cfgPath)).toBe(true);
-  const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
-  expect(cfg.mcpServers.fleet.env.FLEET_SESSION_TOKEN).toBe(e.id);
-  // tmux call
+  // tmux call — plain claude + permission mode + fleet rule; no --mcp-config/--strict/--allowedTools
   const call = runner.calls.find((c) => c.cmd === "tmux" && c.args[0] === "new-session")!;
   expect(call.args).toEqual([
     "new-session", "-d", "-s", "fleet__myapp__uuid10", "-c", "/p/myapp", "-e", "COLORTERM=truecolor",
     "claude", "--session-id", e.id,
     "--permission-mode", "auto",
     "--append-system-prompt", "RULE",
-    "--mcp-config", cfgPath,
-    "--strict-mcp-config",
-    "--allowedTools", "mcp__fleet__request_decision",
   ]);
+  expect(call.args).not.toContain("--strict-mcp-config");
   expect(store.getSession(e.id)!.status).toBe("running");
 });
 
