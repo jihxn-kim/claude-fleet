@@ -433,14 +433,38 @@ export class SessionManager {
     nap("0.4"); // let the input settle before submitting
     send("Enter"); // run the command
     if (disconnect) {
-      // On a connected session /remote-control opens a menu whose default highlight is
-      // the LAST item ("Continue"); items are: Disconnect this session / Show QR code /
-      // Continue. Move up twice to reach "Disconnect this session", then select it.
-      nap("1.2"); // wait for the menu to render
-      send("Up");
-      nap("0.2");
-      send("Up");
-      nap("0.2");
+      // On a connected session /remote-control opens a menu: Disconnect this session /
+      // Show QR code / Continue (default cursor on the last, "Continue"). Wait until it
+      // actually renders — don't blind-navigate — then move the cursor precisely onto
+      // "Disconnect this session" and select it.
+      let pane = "";
+      let opened = false;
+      for (let i = 0; i < 6 && !opened; i++) {
+        nap("0.4");
+        try {
+          pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
+        } catch {
+          pane = "";
+        }
+        opened = /Disconnect this session/i.test(pane);
+      }
+      if (!opened) {
+        throw new HttpError(409, "원격 해제 메뉴가 안 떠요 — 세션이 작업 중이거나 상태가 바뀐 듯. 잠시 후 다시 눌러줘.");
+      }
+      const items: { disc: boolean; cur: boolean }[] = [];
+      for (const l of pane.split("\n")) {
+        if (/Disconnect this session/i.test(l)) items.push({ disc: true, cur: /❯/.test(l) });
+        else if (/Show QR code/i.test(l)) items.push({ disc: false, cur: /❯/.test(l) });
+        else if (/^\s*❯?\s*Continue\b/i.test(l)) items.push({ disc: false, cur: /❯/.test(l) });
+      }
+      const target = items.findIndex((x) => x.disc);
+      const cursor = items.findIndex((x) => x.cur);
+      const delta = target >= 0 && cursor >= 0 ? target - cursor : -2; // fallback: 2 up from "Continue"
+      const key = delta >= 0 ? "Down" : "Up";
+      for (let i = 0; i < Math.abs(delta); i++) {
+        send(key);
+        nap("0.15");
+      }
       send("Enter");
     }
     return { ok: true };

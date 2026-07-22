@@ -97,16 +97,30 @@ test("connectRemote: types /remote-control + Enter into the session", () => {
   expect(sk.some((c) => c.args.includes("Enter"))).toBe(true);
 });
 
-test("connectRemote disconnect: opens the menu, moves up to Disconnect, selects it", () => {
+test("connectRemote disconnect: navigates the cursor from Continue up to Disconnect, selects it", () => {
   const { mgr, runner } = setup();
   const e = mgr.launch("myapp");
+  runner.paneContent = [
+    "  Remote Control",
+    "    Disconnect this session",
+    "    Show QR code  Scan with your phone",
+    "  ❯ Continue",
+    "  Enter to select · Esc to continue",
+  ].join("\n");
   runner.calls.length = 0; // count only the disconnect interaction
   mgr.connectRemote(e.id, true);
   const sk = runner.calls.filter((c) => c.cmd === "tmux" && c.args[0] === "send-keys");
   const ups = sk.filter((c) => c.args.includes("Up"));
   const enters = sk.filter((c) => c.args.includes("Enter"));
-  expect(ups.length).toBe(2); // from default "Continue" up to "Disconnect this session"
+  expect(ups.length).toBe(2); // Continue (cursor) → Show QR → Disconnect = 2 up
   expect(enters.length).toBe(2); // run the command, then select
+});
+
+test("connectRemote disconnect: 409 when the menu never appears", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = "no menu, no disconnect item here";
+  expect(() => mgr.connectRemote(e.id, true)).toThrow(HttpError);
 });
 
 const MENU = [
