@@ -26,6 +26,8 @@
   .srow { display: flex; align-items: center; gap: 8px; background: #16191d; border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; }
   .srow .dot { font-size: 10px; }
   .srow .name { flex: 1; font-size: 13px; color: #c7ccd1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .srow .name.clickable { cursor: pointer; }
+  .srow .name.clickable:hover { color: #fff; text-decoration: underline; }
   .srow button { border: 0; border-radius: 8px; background: #23272e; color: #e8eaed; padding: 6px 10px; font-size: 12px; cursor: pointer; }
   .srow button.kill { background: #3a1e1e; color: #f0a; }
   .srow .badge { color: #f5a623; font-size: 12px; }
@@ -144,11 +146,14 @@
         const btns = running
           ? `<button data-act="open" data-id="${esc(s.id)}">맥에서 열기</button><button class="kill" data-act="close" data-id="${esc(s.id)}">닫기</button>`
           : `<button data-act="resume" data-id="${esc(s.id)}">resume</button>`;
-        return `<div class="srow"><span class="dot">${running ? "🟢" : "⚪️"}</span><span class="name">${esc(s.label || s.tmuxName)}</span>${act}${badge}<button data-act="rename" data-id="${esc(s.id)}" data-label="${esc(s.label || "")}">✏️</button>${btns}</div>`;
+        const nameEl = running
+          ? `<span class="name clickable" data-act="open" data-id="${esc(s.id)}" title="클릭하면 터미널로 이동">${esc(s.label || s.tmuxName)}</span>`
+          : `<span class="name">${esc(s.label || s.tmuxName)}</span>`;
+        return `<div class="srow"><span class="dot">${running ? "🟢" : "⚪️"}</span>${nameEl}${act}${badge}<button data-act="rename" data-id="${esc(s.id)}" data-label="${esc(s.label || "")}">✏️</button>${btns}</div>`;
       }).join("");
       return `<div class="proj"><h3>${esc(p.name)}</h3>${rows}<div class="srow"><button class="newbtn" data-act="new" data-proj="${esc(p.name)}">+ 새 세션</button></div></div>`;
     }).join("");
-    el.querySelectorAll("button[data-act]").forEach((b) => b.addEventListener("click", () => sessionAction(b.dataset)));
+    el.querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", () => sessionAction(b.dataset)));
   }
   async function sessionAction(d) {
     if (d.act === "new") await fetch(q("/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: d.proj }) });
@@ -192,7 +197,7 @@
            : `<div class="a-hint">불러오는 중…</div>`)
         + `<div class="srow"><button class="discbtn" data-act="hide-all">닫기</button></div>`;
     }
-    el.querySelectorAll("button[data-act]").forEach((b) => b.addEventListener("click", () => sessionAction(b.dataset)));
+    el.querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", () => sessionAction(b.dataset)));
   }
 
   async function addProject() {

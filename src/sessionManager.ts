@@ -270,9 +270,30 @@ export class SessionManager {
     const attach = `tmux attach -t ${s.tmuxName}`; // tmuxName is slug-safe, no injection
     const term = this.getTerminal();
     if (term === "iterm") {
+      // Focus the window already attached to this session (tagged by name);
+      // open a new one only if none exists.
+      const tag = `fleet:${s.tmuxName}`;
       this.o.runner.run("osascript", [
-        "-e", `tell application "iTerm" to create window with default profile`,
-        "-e", `tell application "iTerm" to tell current session of current window to write text "${attach}"`,
+        "-e", `tell application "iTerm"`,
+        "-e", `activate`,
+        "-e", `set target to missing value`,
+        "-e", `repeat with w in windows`,
+        "-e", `repeat with tb in tabs of w`,
+        "-e", `repeat with ss in sessions of tb`,
+        "-e", `if name of ss is "${tag}" then set target to w`,
+        "-e", `end repeat`,
+        "-e", `end repeat`,
+        "-e", `end repeat`,
+        "-e", `if target is not missing value then`,
+        "-e", `select target`,
+        "-e", `else`,
+        "-e", `set nw to (create window with default profile)`,
+        "-e", `tell current session of nw`,
+        "-e", `set name to "${tag}"`,
+        "-e", `write text "${attach}"`,
+        "-e", `end tell`,
+        "-e", `end if`,
+        "-e", `end tell`,
       ]);
     } else if (term === "terminal") {
       this.o.runner.run("osascript", ["-e", `tell application "Terminal" to do script "${attach}"`]);
