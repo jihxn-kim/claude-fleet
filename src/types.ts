@@ -28,6 +28,17 @@ export interface PendingDecisionView {
   createdAt: string;
 }
 
+// A native on-screen selection menu detected in a session (permission prompt,
+// AskUserQuestion, plan approval, yes/no, …) — mirrored to the panel.
+export interface PromptOption {
+  n: number;
+  label: string;
+}
+export interface SessionPrompt {
+  title: string;
+  options: PromptOption[];
+}
+
 export type SessionStatus = "running" | "stopped";
 
 export interface SessionEntry {

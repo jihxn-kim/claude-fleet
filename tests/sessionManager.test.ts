@@ -109,6 +109,56 @@ test("connectRemote disconnect: opens the menu, moves up to Disconnect, selects 
   expect(enters.length).toBe(2); // run the command, then select
 });
 
+const MENU = [
+  "무슨 도구를 쓸까?",
+  "❯ 1. 첫번째 옵션",
+  "  2. 두번째 옵션",
+  "  3. 세번째 옵션",
+  "Enter to select · ↑/↓ to navigate · Esc to cancel",
+].join("\n");
+
+test("sampleActivity: mirrors an on-screen selection menu as a prompt", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = MENU;
+  mgr.sampleActivity();
+  const p = mgr.sessionPrompt(e.id)!;
+  expect(p).not.toBeNull();
+  expect(p.title).toBe("무슨 도구를 쓸까?");
+  expect(p.options).toEqual([
+    { n: 1, label: "첫번째 옵션" },
+    { n: 2, label: "두번째 옵션" },
+    { n: 3, label: "세번째 옵션" },
+  ]);
+});
+
+test("sampleActivity: no menu → no prompt", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = "그냥 대화 중\n  auto mode on · 5 agents";
+  mgr.sampleActivity();
+  expect(mgr.sessionPrompt(e.id)).toBeNull();
+});
+
+test("answerPrompt: navigates from the cursor to the chosen option, then Enter", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = MENU; // cursor (❯) on option 1
+  runner.calls.length = 0;
+  mgr.answerPrompt(e.id, 3); // 1 → 3 = two Downs then Enter
+  const sk = runner.calls.filter((c) => c.cmd === "tmux" && c.args[0] === "send-keys");
+  expect(sk.filter((c) => c.args.includes("Down")).length).toBe(2);
+  expect(sk.filter((c) => c.args.includes("Up")).length).toBe(0);
+  expect(sk.filter((c) => c.args.includes("Enter")).length).toBe(1);
+});
+
+test("answerPrompt: no menu on screen → 409", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = "no menu here";
+  expect(() => mgr.answerPrompt(e.id, 1)).toThrow(HttpError);
+});
+
 test("launch unknown project throws HttpError 400", () => {
   const { mgr } = setup();
   expect(() => mgr.launch("nope")).toThrowError(expect.objectContaining({ status: 400 }));

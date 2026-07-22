@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { writeFileSync, mkdirSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync, fstatSync, readFileSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import type { SessionStore } from "./sessionStore.js";
-import type { SessionEntry, AvailableSession, AllSession } from "./types.js";
+import type { SessionEntry, AvailableSession, AllSession, SessionPrompt, PromptOption } from "./types.js";
 
 export interface CommandRunner {
   run(cmd: string, args: string[]): string;
@@ -604,6 +604,40 @@ export class SessionManager {
   private activityMap: Record<string, string> = {}; // id → "busy" | "idle"
   private terminalMap: Record<string, boolean> = {}; // id → a terminal window is attached
   private remoteMap: Record<string, boolean> = {}; // id → remote-control connected
+  private promptMap: Record<string, SessionPrompt | null> = {}; // id → on-screen menu, if any
+
+  // Detect a native on-screen selection menu — permission prompt, AskUserQuestion, plan
+  // approval, yes/no, the /remote-control menu — none of which are MCP request_decision
+  // calls, so they'd otherwise be invisible to the panel. The shared shape is numbered
+  // options above a footer like "Enter to select" / "Esc to cancel". Returns the options
+  // plus which one the cursor (❯) is on, so answers can navigate there.
+  private parsePrompt(pane: string): (SessionPrompt & { selectedIdx: number }) | null {
+    const tail = pane.split("\n").slice(-30);
+    const footerIdx = tail.findIndex((l) =>
+      /(Enter to select|↑\/↓ to navigate|Esc to cancel|Tab to amend|to proceed\?)/i.test(l),
+    );
+    if (footerIdx < 0) return null;
+    const options: PromptOption[] = [];
+    let selectedIdx = -1;
+    let firstOptLine = -1;
+    for (let i = 0; i < footerIdx; i++) {
+      const m = tail[i].match(/^\s*(❯?)\s*(\d+)\.\s+(.*\S)\s*$/);
+      if (!m) continue;
+      if (firstOptLine < 0) firstOptLine = i;
+      if (m[1].includes("❯")) selectedIdx = options.length;
+      options.push({ n: Number(m[2]), label: m[3].trim() });
+    }
+    if (options.length < 2) return null;
+    let title = "";
+    for (let i = firstOptLine - 1; i >= 0 && i >= firstOptLine - 4; i--) {
+      const t = tail[i].replace(/[─┈—│]/g, "").replace(/^\s*[☐☑◦•]\s*/, "").trim();
+      if (t) {
+        title = t;
+        break;
+      }
+    }
+    return { title, options, selectedIdx: selectedIdx < 0 ? 0 : selectedIdx };
+  }
 
   // A session is "busy" only while claude is actively generating or running a tool —
   // exactly when its status line shows "esc to interrupt". That line is stable through a
@@ -630,6 +664,7 @@ export class SessionManager {
     const next: Record<string, string> = {};
     const term: Record<string, boolean> = {};
     const remote: Record<string, boolean> = {};
+    const prompt: Record<string, SessionPrompt | null> = {};
     for (const s of this.o.store.listSessions()) {
       if (s.status !== "running") continue;
       let pane: string | null = null;
@@ -642,10 +677,13 @@ export class SessionManager {
         next[s.id] = "idle";
         term[s.id] = false;
         remote[s.id] = false;
+        prompt[s.id] = null;
         continue;
       }
       next[s.id] = this.paneShowsBusy(pane) ? "busy" : "idle";
       remote[s.id] = this.paneShowsRemote(pane);
+      const p = this.parsePrompt(pane);
+      prompt[s.id] = p ? { title: p.title, options: p.options } : null;
       let clients = "";
       try {
         clients = this.o.runner.run("tmux", ["list-clients", "-t", s.tmuxName]).trim();
@@ -657,6 +695,7 @@ export class SessionManager {
     this.activityMap = next;
     this.terminalMap = term;
     this.remoteMap = remote;
+    this.promptMap = prompt;
   }
 
   // Read the most recent sample (cheap; no shelling out here).
@@ -668,6 +707,39 @@ export class SessionManager {
   }
   remoteActive(id: string): boolean {
     return this.remoteMap[id] ?? false;
+  }
+  sessionPrompt(id: string): SessionPrompt | null {
+    return this.promptMap[id] ?? null;
+  }
+
+  // Answer an on-screen menu from the panel: re-read the pane, then navigate the cursor
+  // from where it currently sits to the chosen option and press Enter. Navigating (vs
+  // typing a number) works whether or not the menu accepts number shortcuts.
+  answerPrompt(id: string, n: number): { ok: boolean } {
+    const s = this.o.store.getSession(id);
+    if (!s) throw new HttpError(404, `no session ${id}`);
+    let pane = "";
+    try {
+      pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
+    } catch {
+      /* fall through to the no-prompt error */
+    }
+    const p = this.parsePrompt(pane);
+    if (!p) throw new HttpError(409, "지금 이 세션에 선택 프롬프트가 없어요.");
+    const targetIdx = p.options.findIndex((o) => o.n === n);
+    if (targetIdx < 0) throw new HttpError(409, `옵션 ${n}을(를) 찾을 수 없어요.`);
+    const delta = targetIdx - p.selectedIdx;
+    const key = delta >= 0 ? "Down" : "Up";
+    for (let i = 0; i < Math.abs(delta); i++) {
+      this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, key]);
+      try {
+        this.o.runner.run("sleep", ["0.12"]);
+      } catch {
+        /* ignore */
+      }
+    }
+    this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, "Enter"]);
+    return { ok: true };
   }
 
   private claudeArgv(resumeFlag: string, id: string, mcpPath: string, fork = false): string[] {

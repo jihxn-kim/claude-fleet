@@ -54,6 +54,7 @@ export function createServer(
       activity: activity[s.id] ?? null,
       terminalOpen: sessions.terminalOpen(s.id),
       remoteActive: sessions.remoteActive(s.id),
+      prompt: sessions.sessionPrompt(s.id),
     }));
   }
   function sendHttpError(res: ServerResponse, err: unknown): void {
@@ -164,6 +165,16 @@ export function createServer(
               ? sessions.adoptByPath(body.id, body.projectPath)
               : sessions.adopt(body.id, body.project as string);
             return send(res, 201, entry);
+          } catch (e) {
+            return sendHttpError(res, e);
+          }
+        }
+        const pa = path.match(/^\/api\/sessions\/([^/]+)\/prompt-answer$/);
+        if (pa && method === "POST") {
+          if (!sessions) return send(res, 404, { error: "sessions disabled" });
+          try {
+            const { n } = (await readJson(req)) as { n: number };
+            return send(res, 200, sessions.answerPrompt(pa[1], Number(n)));
           } catch (e) {
             return sendHttpError(res, e);
           }
