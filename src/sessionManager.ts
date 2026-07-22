@@ -613,9 +613,16 @@ export class SessionManager {
   // plus which one the cursor (❯) is on, so answers can navigate there.
   private parsePrompt(pane: string): (SessionPrompt & { selectedIdx: number }) | null {
     const tail = pane.split("\n").slice(-30);
-    const footerIdx = tail.findIndex((l) =>
-      /(Enter to select|↑\/↓ to navigate|Esc to cancel|Tab to amend|to proceed\?)/i.test(l),
-    );
+    // The footer is the menu's LAST line ("Enter to select", "Esc to cancel", "Tab to
+    // amend", …). Scan from the bottom — the question above ("Do you want to proceed?")
+    // must NOT be mistaken for the footer, or the options below it get skipped.
+    let footerIdx = -1;
+    for (let i = tail.length - 1; i >= 0; i--) {
+      if (/(Enter to select|↑\/↓ to navigate|Esc to cancel|Tab to amend|ctrl\+e to explain)/i.test(tail[i])) {
+        footerIdx = i;
+        break;
+      }
+    }
     if (footerIdx < 0) return null;
     const options: PromptOption[] = [];
     let selectedIdx = -1;
@@ -628,15 +635,14 @@ export class SessionManager {
       options.push({ n: Number(m[2]), label: m[3].trim() });
     }
     if (options.length < 2) return null;
-    let title = "";
-    for (let i = firstOptLine - 1; i >= 0 && i >= firstOptLine - 4; i--) {
-      const t = tail[i].replace(/[─┈—│]/g, "").replace(/^\s*[☐☑◦•]\s*/, "").trim();
-      if (t) {
-        title = t;
-        break;
-      }
+    // title: up to 2 meaningful lines just above the options (question + any context)
+    const titleLines: string[] = [];
+    for (let i = firstOptLine - 1; i >= 0 && titleLines.length < 2; i--) {
+      if (/^\s*❯?\s*\d+\.\s/.test(tail[i])) continue; // skip other option lines
+      const t = tail[i].replace(/[─┈—│]/g, "").replace(/^\s*[☐☑◦•⏺]\s*/, "").trim();
+      if (t) titleLines.unshift(t);
     }
-    return { title, options, selectedIdx: selectedIdx < 0 ? 0 : selectedIdx };
+    return { title: titleLines.join(" · "), options, selectedIdx: selectedIdx < 0 ? 0 : selectedIdx };
   }
 
   // A session is "busy" only while claude is actively generating or running a tool —

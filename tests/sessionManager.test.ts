@@ -132,6 +132,25 @@ test("sampleActivity: mirrors an on-screen selection menu as a prompt", () => {
   ]);
 });
 
+test("sampleActivity: yes/no permission prompt — 'Do you want to proceed?' is the question, not the footer", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = [
+    " Contains shell syntax (string) that cannot be statically analyzed",
+    "",
+    " Do you want to proceed?",
+    " ❯ 1. Yes",
+    "   2. No",
+    "",
+    " Esc to cancel · Tab to amend · ctrl+e to explain",
+  ].join("\n");
+  mgr.sampleActivity();
+  const p = mgr.sessionPrompt(e.id)!;
+  expect(p).not.toBeNull();
+  expect(p.options).toEqual([{ n: 1, label: "Yes" }, { n: 2, label: "No" }]);
+  expect(p.title).toContain("Do you want to proceed?");
+});
+
 test("sampleActivity: no menu → no prompt", () => {
   const { mgr, runner } = setup();
   const e = mgr.launch("myapp");
