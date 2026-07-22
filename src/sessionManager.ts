@@ -721,6 +721,12 @@ export class SessionManager {
     const lines = pane.split("\n");
     // main is generating / running a tool
     if (/esc to interrupt/i.test(lines.slice(-8).join("\n"))) return true;
+    // ...but typing into the composer collapses the status line and HIDES "esc to
+    // interrupt". The spinner/working line just above the composer survives and carries
+    // an elapsed-time counter — "(3s ·", "(1m 8s ·", "(2h 4m 9s ·" — that only appears
+    // while generating. Match it so a busy session a user is typing into isn't misread
+    // as idle (completed sessions leave no such counter).
+    if (/\((?:\d+h )?(?:\d+m )?\d+s ·/.test(lines.slice(-12).join("\n"))) return true;
     // blocked waiting on a background subagent (Task) — still working, just no
     // "esc to interrupt" line. The agent manager list can push this up a few rows.
     if (/Waiting for \d+ background agents? to finish/i.test(lines.slice(-16).join("\n"))) return true;

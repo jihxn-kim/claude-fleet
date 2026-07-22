@@ -66,6 +66,31 @@ test("sampleActivity: busy when the status line shows 'esc to interrupt', else i
   expect(mgr.sessionActivity()[e.id]).toBe("idle");
 });
 
+test("sampleActivity: busy while typing into the composer (status line hides 'esc to interrupt', spinner timer survives)", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  // Reproduced from a live session: typing collapses the status line so "esc to
+  // interrupt" is gone, but the spinner/working line still carries the elapsed timer.
+  runner.paneContent = [
+    "❯ Count from 1 to 60, one per line.",
+    "· Scampering… (3s · thinking with xhigh effort)",
+    "──────────",
+    "❯ asdf 타이핑중 while busy",
+    "──────────",
+    "  ⏸ manual mode on",
+  ].join("\n");
+  mgr.sampleActivity();
+  expect(mgr.sessionActivity()[e.id]).toBe("busy");
+});
+
+test("sampleActivity: idle prompt with parenthetical text but no elapsed timer stays idle", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = "some output\n❯ \n  ⏵⏵ auto mode on (shift+tab to cycle) · ← 5 agents";
+  mgr.sampleActivity();
+  expect(mgr.sessionActivity()[e.id]).toBe("idle");
+});
+
 test("sampleActivity: busy while waiting on a background subagent (no 'esc to interrupt')", () => {
   const { mgr, runner } = setup();
   const e = mgr.launch("myapp");
