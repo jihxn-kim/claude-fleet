@@ -236,7 +236,7 @@ export class SessionManager {
         }
       }
       for (const table of ["copy-mode", "copy-mode-vi"]) {
-        this.o.runner.run("tmux", ["bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-no-clear", "pbcopy"]);
+        this.o.runner.run("tmux", ["bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe", "pbcopy"]);
       }
     } catch {
       /* best-effort */
