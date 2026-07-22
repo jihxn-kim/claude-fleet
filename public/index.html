@@ -20,29 +20,45 @@
   .opt .lab { display: block; font-size: 12px; font-weight: 500; opacity: .7; margin-top: 6px; }
   textarea { width: 100%; background: #1e2228; border: 1px solid #2b3038; border-radius: 12px; color: #e8eaed; padding: 12px; font: inherit; min-height: 64px; }
   .send { margin-top: 10px; width: 100%; border: 0; border-radius: 12px; background: #d2603a; color: #fff; font-size: 16px; font-weight: 700; padding: 14px; cursor: pointer; }
-  .sessions { max-width: 620px; margin: 16px auto 0; }
-  .proj { margin-bottom: 14px; }
-  .proj h3 { font-size: 13px; color: #8a929b; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .06em; }
-  .srow { display: flex; align-items: center; gap: 8px; background: #16191d; border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; }
-  .srow .dot { font-size: 10px; }
-  .srow .name { flex: 1; font-size: 13px; color: #c7ccd1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .srow .name.clickable { cursor: pointer; }
-  .srow .name.clickable:hover { color: #fff; text-decoration: underline; }
-  .srow button { border: 0; border-radius: 8px; background: #23272e; color: #e8eaed; padding: 6px 10px; font-size: 12px; cursor: pointer; }
-  .srow button.kill { background: #3a1e1e; color: #f0a; }
-  .srow .badge { color: #f5a623; font-size: 12px; }
-  .srow .act { font-size: 11px; white-space: nowrap; }
+  .card .who { font-size: 12px; color: #7ee2a8; margin: -8px 0 12px; }
+
+  /* 탭 */
+  .tabs { max-width: 620px; margin: 0 auto 16px; display: flex; gap: 6px; }
+  .tab { flex: 1; position: relative; border: 0; border-radius: 12px; background: #16191d; color: #8a929b; padding: 12px; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .tab.active { background: #23272e; color: #e8eaed; }
+  .tab .cnt { display: none; margin-left: 6px; background: #d2603a; color: #fff; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 1px 8px; vertical-align: middle; }
+  .panel[hidden] { display: none; }
+
+  /* 세션 카드 (메인 탭) */
+  .sessions { max-width: 620px; margin: 0 auto; }
+  .proj { margin-bottom: 18px; }
+  .proj h3 { font-size: 13px; color: #8a929b; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .06em; }
+  .scard { background: #16191d; border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
+  .scard-top { display: flex; align-items: center; gap: 8px; }
+  .scard-top .dot { font-size: 10px; }
+  .scard-top .name { flex: 1; font-size: 15px; font-weight: 600; color: #e8eaed; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scard-top .name.clickable { cursor: pointer; }
+  .scard-top .name.clickable:hover { text-decoration: underline; }
+  .scard-top .rename { border: 0; background: none; color: #6b727a; cursor: pointer; font-size: 14px; padding: 2px 4px; }
+  .scard-btns { display: flex; gap: 8px; margin-top: 12px; }
+  .scard-btns button { flex: 1; border: 0; border-radius: 10px; background: #23272e; color: #e8eaed; padding: 10px; font-size: 13px; cursor: pointer; }
+  .scard-btns button.kill { background: #3a1e1e; color: #f4718a; }
+  .act { font-size: 11px; white-space: nowrap; }
   .act.busy { color: #6ab0ff; }
   .act.idle { color: #7ee2a8; }
   .act.wait { color: #f5a623; }
-  .newbtn { background: #1e2f22 !important; color: #7ee2a8 !important; }
-  .card .who { font-size: 12px; color: #7ee2a8; margin: -8px 0 12px; }
-  .addproj { max-width: 620px; margin: 8px auto 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .badge { color: #f5a623; font-size: 12px; }
+  .cardbtn { display: block; width: 100%; border: 0; border-radius: 12px; padding: 12px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; background: #1e2f22; color: #7ee2a8; }
+
+  /* 관리 탭 */
+  .srow { display: flex; align-items: center; gap: 8px; background: #16191d; border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; }
+  .srow .dot { font-size: 10px; }
+  .srow button { border: 0; border-radius: 8px; background: #23272e; color: #e8eaed; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+  .addproj { max-width: 620px; margin: 0 auto 16px; display: flex; flex-wrap: wrap; gap: 6px; }
   .addproj .lbl { flex: 1 1 100%; font-size: 12px; color: #8a929b; text-transform: uppercase; letter-spacing: .06em; }
   .addproj input { flex: 1 1 100%; background: #1e2228; border: 1px solid #2b3038; border-radius: 10px; color: #e8eaed; padding: 10px; font: inherit; font-size: 14px; }
   .addproj button { border: 0; border-radius: 10px; background: #1e2f22; color: #7ee2a8; padding: 10px 14px; font-size: 14px; font-weight: 600; cursor: pointer; }
   .addproj .addmsg { flex: 1 1 100%; font-size: 12px; color: #8a929b; min-height: 14px; }
-  .avail { background: #14171b; border-radius: 10px; padding: 6px 10px; margin: 0 0 6px; }
   .a-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid #23272e; }
   .a-row:first-child { border-top: 0; }
   .a-meta { flex: 1; min-width: 0; }
@@ -51,26 +67,39 @@
   .a-row button { border: 0; border-radius: 8px; background: #1e2f22; color: #7ee2a8; padding: 6px 10px; font-size: 12px; cursor: pointer; }
   .discbtn { background: #1a1f26 !important; color: #8a929b !important; }
   .a-hint { font-size: 11px; color: #6b727a; padding: 4px 0; }
-  #allsessions { max-width: 620px; margin: 12px auto 0; }
+  #allsessions { max-width: 620px; margin: 0 auto 18px; }
   .lbl2 { font-size: 12px; color: #8a929b; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px; }
   .a-run { color: #7ee2a8; }
-  #settings { max-width: 620px; margin: 18px auto; }
+  .sec-head { max-width: 620px; margin: 0 auto 6px; font-size: 13px; color: #8a929b; text-transform: uppercase; letter-spacing: .06em; }
+  #settings { max-width: 620px; margin: 0 auto; }
   #settings select { background: #1e2228; color: #e8eaed; border: 1px solid #2b3038; border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; }
   #settings .setrow { margin-bottom: 8px; }
 </style>
 </head>
 <body>
-<div id="root"><div class="empty">대기 중인 결정이 없어요</div></div>
-<div id="allsessions"></div>
-<div id="addproj" class="addproj">
-  <div class="lbl">프로젝트 추가</div>
-  <input id="pname" placeholder="이름 (예: myapp)" autocapitalize="off" autocorrect="off" spellcheck="false" />
-  <input id="ppath" placeholder="repo 절대경로 (예: /Users/you/work/myapp)" autocapitalize="off" autocorrect="off" spellcheck="false" />
-  <button id="paddbtn">+ 추가</button>
-  <div id="addmsg" class="addmsg"></div>
+<div class="tabs">
+  <button class="tab active" data-tab="main">결정 &amp; 세션<span class="cnt" id="pcount"></span></button>
+  <button class="tab" data-tab="manage">관리</button>
 </div>
-<div id="sessions" class="sessions"></div>
-<div id="settings"></div>
+
+<div id="tab-main" class="panel">
+  <div id="root"><div class="empty">대기 중인 결정이 없어요</div></div>
+  <div id="sessions" class="sessions"></div>
+</div>
+
+<div id="tab-manage" class="panel" hidden>
+  <div class="addproj" id="addproj">
+    <div class="lbl">프로젝트 추가</div>
+    <input id="pname" placeholder="이름 (예: myapp)" autocapitalize="off" autocorrect="off" spellcheck="false" />
+    <input id="ppath" placeholder="repo 절대경로 (예: /Users/you/work/myapp)" autocapitalize="off" autocorrect="off" spellcheck="false" />
+    <button id="paddbtn">+ 추가</button>
+    <div id="addmsg" class="addmsg"></div>
+  </div>
+  <div id="allsessions"></div>
+  <div class="sec-head">설정</div>
+  <div id="settings"></div>
+</div>
+
 <script>
   const token = new URLSearchParams(location.search).get("token") || "";
   const q = (s) => `${s}${s.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
@@ -78,9 +107,21 @@
   let showAll = false;
   let allCache = [];
 
+  // 탭 전환
+  document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === t));
+    const name = t.dataset.tab;
+    document.getElementById("tab-main").hidden = name !== "main";
+    document.getElementById("tab-manage").hidden = name !== "manage";
+  }));
+
   async function poll() {
     try {
       const list = await (await fetch(q("/api/decisions"))).json();
+      const badge = document.getElementById("pcount");
+      const n = Array.isArray(list) ? list.length : 0;
+      badge.textContent = n ? String(n) : "";
+      badge.style.display = n ? "inline-block" : "none";
       render(list[0] || null);
     } catch (e) { /* 네트워크 끊김은 다음 폴에서 복구 */ }
     setTimeout(poll, 1500);
@@ -137,21 +178,28 @@
   }
   function renderSessions(projects, sessions) {
     const el = document.getElementById("sessions");
+    if (!projects.length) {
+      el.innerHTML = '<div class="empty">아직 세션이 없어요 — <b>관리</b> 탭에서 프로젝트를 추가하거나 기존 세션을 가져와.</div>';
+      return;
+    }
+    const ACT = { busy: '<span class="act busy">🔵 작업중</span>', idle: '<span class="act idle">✅ 완료</span>', waiting: '<span class="act wait">⏳ 대기</span>', blocked: '<span class="act idle">✅ 완료</span>' };
     el.innerHTML = projects.map((p) => {
-      const rows = sessions.filter((s) => s.project === p.name).map((s) => {
+      const cards = sessions.filter((s) => s.project === p.name).map((s) => {
         const running = s.status === "running";
         const badge = s.notice ? `<span class="badge" title="${esc(s.notice.message)}">⚠️</span>` : "";
-        const ACT = { busy: '<span class="act busy">🔵 작업중</span>', idle: '<span class="act idle">✅ 완료</span>', waiting: '<span class="act wait">⏳ 대기</span>', blocked: '<span class="act idle">✅ 완료</span>' };
         const act = running ? (ACT[s.activity] || "") : "";
-        const btns = running
-          ? `<button data-act="open" data-id="${esc(s.id)}">맥에서 열기</button><button class="kill" data-act="close" data-id="${esc(s.id)}">닫기</button>`
-          : `<button data-act="resume" data-id="${esc(s.id)}">resume</button>`;
         const nameEl = running
           ? `<span class="name clickable" data-act="open" data-id="${esc(s.id)}" title="클릭하면 터미널로 이동">${esc(s.label || s.tmuxName)}</span>`
           : `<span class="name">${esc(s.label || s.tmuxName)}</span>`;
-        return `<div class="srow"><span class="dot">${running ? "🟢" : "⚪️"}</span>${nameEl}${act}${badge}<button data-act="rename" data-id="${esc(s.id)}" data-label="${esc(s.label || "")}">✏️</button>${btns}</div>`;
+        const btns = running
+          ? `<button data-act="open" data-id="${esc(s.id)}">맥에서 열기</button><button class="kill" data-act="close" data-id="${esc(s.id)}">닫기</button>`
+          : `<button data-act="resume" data-id="${esc(s.id)}">resume</button>`;
+        return `<div class="scard">
+            <div class="scard-top"><span class="dot">${running ? "🟢" : "⚪️"}</span>${nameEl}${act}${badge}<button class="rename" data-act="rename" data-id="${esc(s.id)}" data-label="${esc(s.label || "")}">✏️</button></div>
+            <div class="scard-btns">${btns}</div>
+          </div>`;
       }).join("");
-      return `<div class="proj"><h3>${esc(p.name)}</h3>${rows}<div class="srow"><button class="newbtn" data-act="new" data-proj="${esc(p.name)}">+ 새 세션</button></div></div>`;
+      return `<div class="proj"><h3>${esc(p.name)}</h3>${cards}<button class="cardbtn" data-act="new" data-proj="${esc(p.name)}">+ 새 세션</button></div>`;
     }).join("");
     el.querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", () => sessionAction(b.dataset)));
   }
@@ -210,7 +258,7 @@
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, path }),
       });
       if (res.ok) {
-        msg.textContent = `추가됨: ${name} — 아래 목록에서 "+ 새 세션" 눌러`;
+        msg.textContent = `추가됨: ${name} — "결정 & 세션" 탭에서 "+ 새 세션" 눌러`;
         document.getElementById("pname").value = "";
         document.getElementById("ppath").value = "";
         pollSessions();
