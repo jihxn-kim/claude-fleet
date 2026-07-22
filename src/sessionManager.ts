@@ -411,15 +411,30 @@ export class SessionManager {
   connectRemote(id: string, disconnect = false): { ok: boolean } {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
-    this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, "-l", "/remote-control"]);
-    this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, "Enter"]);
-    if (disconnect) {
+    // Slash commands only run at the idle prompt; while claude is generating, the
+    // keystrokes just pile up in the input box unexecuted. Refuse with a clear message.
+    let busy = false;
+    try {
+      busy = /esc to interrupt/i.test(this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]));
+    } catch {
+      /* can't read → assume idle */
+    }
+    if (busy) throw new HttpError(409, "세션이 작업 중이라 원격제어를 걸 수 없어요. ✅ 완료(유휴)일 때 눌러주세요.");
+    const send = (...keys: string[]) => this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, ...keys]);
+    const nap = (sec: string) => {
       try {
-        this.o.runner.run("sleep", ["1.2"]); // let the menu render before selecting
+        this.o.runner.run("sleep", [sec]);
       } catch {
         /* ignore */
       }
-      this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, "Enter"]);
+    };
+    send("C-u"); // clear any residual/half-typed input first
+    send("-l", "/remote-control");
+    nap("0.4"); // let the input settle before submitting
+    send("Enter"); // run the command
+    if (disconnect) {
+      nap("1.2"); // wait for the menu (Disconnect / Show QR / Continue) to render
+      send("Enter"); // select the first, default-highlighted item: Disconnect this session
     }
     return { ok: true };
   }
