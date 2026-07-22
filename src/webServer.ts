@@ -48,6 +48,7 @@ export function createServer(
   function enrichSessions(): unknown[] {
     if (!sessions) return [];
     const activity = sessions.sessionActivity();
+    const pendingDecision = new Set(store.list().map((d) => d.sessionToken));
     return sessions.store.listSessions().map((s) => ({
       ...s,
       notice: notices.get(s.id) ?? null,
@@ -55,6 +56,7 @@ export function createServer(
       terminalOpen: sessions.terminalOpen(s.id),
       remoteActive: sessions.remoteActive(s.id),
       prompt: sessions.sessionPrompt(s.id),
+      waitingDecision: pendingDecision.has(s.id), // has a pending MCP request_decision
     }));
   }
   function sendHttpError(res: ServerResponse, err: unknown): void {

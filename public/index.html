@@ -310,9 +310,10 @@
   }
   function renderBoard(sessions) {
     const running = sessions.filter((s) => s.status === "running");
-    const waiting = running.filter((s) => s.prompt); // 화면에 선택메뉴 떠서 입력 대기중
-    const busy = running.filter((s) => !s.prompt && s.activity === "busy");
-    const idle = running.filter((s) => !s.prompt && s.activity !== "busy");
+    const needsYou = (s) => s.prompt || s.waitingDecision; // 화면 프롬프트 or MCP 결정 대기
+    const waiting = running.filter(needsYou);
+    const busy = running.filter((s) => !needsYou(s) && s.activity === "busy");
+    const idle = running.filter((s) => !needsYou(s) && s.activity !== "busy");
     const off = sessions.filter((s) => s.status !== "running");
     const fill = (colId, nId, list) => {
       document.getElementById(colId).innerHTML = list.length ? list.map(sessionCard).join("") : '<div class="empty">없음</div>';
