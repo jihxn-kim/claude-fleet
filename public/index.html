@@ -196,7 +196,10 @@
     el.dataset.sid = id;
     el.dataset.sig = sig;
     const ctx = s.prompt.context ? `<pre class="pctx">${esc(s.prompt.context)}</pre>` : "";
-    const opts = s.prompt.options.map((o) =>
+    // "Type something"(자유입력) / "Chat about this"(대화 전환)는 옵션 클릭 대상이 아님 —
+    // 자유입력은 아래 메모칸으로만. 버튼에서 뺀다.
+    const clickable = s.prompt.options.filter((o) => !/^\s*(type something|chat about this)\b/i.test(o.label));
+    const opts = clickable.map((o) =>
       `<button class="popt${multi ? " mpopt" : ""}" data-n="${Number(o.n)}"><b>${Number(o.n)}</b>${esc(o.label)}</button>`).join("");
     const submitBtn = multi ? `<button class="send mpsubmit">선택 완료</button>` : "";
     const hasMemo = s.prompt.options.some((o) => /type something/i.test(o.label));

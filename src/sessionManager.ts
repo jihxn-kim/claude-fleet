@@ -837,11 +837,12 @@ export class SessionManager {
       send(key);
       nap("0.12");
     }
-    send("Enter"); // select "Type something" → opens the text input
-    nap("0.4");
-    send("-l", clean); // type the memo
+    // Cursor is now ON "Type something" — do NOT press Enter (that declines). Just type:
+    // the text replaces the label inline and puts the option into edit mode; Enter submits.
     nap("0.2");
-    send("Enter"); // submit
+    send("-l", clean);
+    nap("0.2");
+    send("Enter");
     return { ok: true };
   }
 

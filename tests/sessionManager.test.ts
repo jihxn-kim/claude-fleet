@@ -185,9 +185,10 @@ test("answerPromptMemo: picks 'Type something', types the memo, submits", () => 
   runner.calls.length = 0;
   mgr.answerPromptMemo(e.id, "내 메모");
   const sk = runner.calls.filter((c) => c.cmd === "tmux" && c.args[0] === "send-keys");
-  expect(sk.filter((c) => c.args.includes("Down")).length).toBe(1); // 옵션A → Type something
-  expect(sk.some((c) => c.args.includes("-l") && c.args.includes("내 메모"))).toBe(true);
-  expect(sk.filter((c) => c.args.includes("Enter")).length).toBe(2); // 입력창 열기 + 제출
+  expect(sk.filter((c) => c.args.includes("Down")).length).toBe(1); // 옵션A → Type something (커서만 이동)
+  expect(sk.some((c) => c.args.includes("-l") && c.args.includes("내 메모"))).toBe(true); // 타이핑
+  expect(sk.filter((c) => c.args.includes("Enter")).length).toBe(1); // Enter는 제출 1번뿐 (선택 Enter 없음)
+  expect(sk.findIndex((c) => c.args.includes("내 메모")) < sk.findIndex((c) => c.args.includes("Enter"))).toBe(true); // 타이핑이 Enter보다 먼저
 });
 
 const MULTI = [
