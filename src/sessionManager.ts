@@ -245,6 +245,11 @@ export class SessionManager {
           /* already unbound */
         }
       }
+      // Also disarm the root-table drag: its default `copy-mode -M` ENTERS copy mode and
+      // begins a selection when a drag starts before any scroll (the trackpad gesture
+      // registers as a drag first). Replace that selection-start with select-pane, while
+      // keeping the app/in-mode passthrough branch untouched.
+      this.o.runner.run("tmux", ["bind-key", "-n", "MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "select-pane"]);
     } catch {
       /* best-effort */
     }
