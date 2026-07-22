@@ -282,6 +282,27 @@ test("reconcile: tmux alive and claude running (non-shell) → stays running", (
   expect(store.getSession(e.id)!.status).toBe("running");
 });
 
+test("reconcile: stopped session whose claude came back (live tmux, non-shell) → running", () => {
+  const { mgr, store, runner } = setup();
+  const e = mgr.launch("myapp");
+  mgr.close(e.id); // now stopped (close kills tmux)
+  expect(store.getSession(e.id)!.status).toBe("stopped");
+  runner.listOutput = `${e.tmuxName}\n`; // tmux is alive again...
+  runner.paneCommand = "2.1.217"; // ...running claude (e.g. resumed by hand)
+  mgr.reconcile();
+  expect(store.getSession(e.id)!.status).toBe("running");
+});
+
+test("reconcile: stopped session with a live tmux still at a shell → stays stopped", () => {
+  const { mgr, store, runner } = setup();
+  const e = mgr.launch("myapp");
+  mgr.close(e.id);
+  runner.listOutput = `${e.tmuxName}\n`;
+  runner.paneCommand = "zsh"; // tmux alive but only a shell → claude not back
+  mgr.reconcile();
+  expect(store.getSession(e.id)!.status).toBe("stopped");
+});
+
 test("resume: kills any stale tmux session before spawning a fresh one (no duplicate)", () => {
   const { mgr, runner } = setup();
   const e = mgr.launch("myapp");

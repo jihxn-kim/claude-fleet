@@ -465,11 +465,15 @@ export class SessionManager {
   reconcile(): void {
     const live = new Set(this.liveFleetSessions());
     for (const s of this.o.store.listSessions()) {
-      if (s.status !== "running") continue;
-      // tmux gone, OR tmux alive but claude exited to a shell → mark stopped so the panel
-      // shows it as ⚫ inactive with a reactivate button (instead of a dead "running").
-      if (!live.has(s.tmuxName) || this.paneIsShell(s.tmuxName)) {
+      // claude is running iff the tmux session is alive AND its pane isn't a shell.
+      const claudeRunning = live.has(s.tmuxName) && !this.paneIsShell(s.tmuxName);
+      if (s.status === "running" && !claudeRunning) {
+        // tmux gone, or dropped to a shell → mark stopped so the panel shows ⚫ inactive.
         this.o.store.setStatus(s.id, "stopped");
+      } else if (s.status === "stopped" && claudeRunning) {
+        // claude came back in a live tmux (e.g. resumed by hand inside the session) →
+        // reflect reality instead of leaving it stuck inactive.
+        this.o.store.setStatus(s.id, "running");
       }
     }
   }
