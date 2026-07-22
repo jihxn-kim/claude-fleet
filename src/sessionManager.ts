@@ -635,7 +635,7 @@ export class SessionManager {
   // calls, so they'd otherwise be invisible to the panel. The shared shape is numbered
   // options above a footer like "Enter to select" / "Esc to cancel". Returns the options
   // plus which one the cursor (❯) is on, so answers can navigate there.
-  private parsePrompt(pane: string): (SessionPrompt & { selectedIdx: number }) | null {
+  private parsePrompt(pane: string): (SessionPrompt & { selectedIdx: number; multiSelect: boolean }) | null {
     const tail = pane.split("\n").slice(-30);
     // The footer is the menu's LAST line ("Enter to select", "Esc to cancel", "Tab to
     // amend", …). Scan from the bottom — the question above ("Do you want to proceed?")
@@ -651,12 +651,19 @@ export class SessionManager {
     const options: PromptOption[] = [];
     let selectedIdx = -1;
     let firstOptLine = -1;
+    let multiSelect = false;
     for (let i = 0; i < footerIdx; i++) {
       const m = tail[i].match(/^\s*(❯?)\s*(\d+)\.\s+(.*\S)\s*$/);
       if (!m) continue;
       if (firstOptLine < 0) firstOptLine = i;
       if (m[1].includes("❯")) selectedIdx = options.length;
-      options.push({ n: Number(m[2]), label: m[3].trim() });
+      let label = m[3].trim();
+      const cb = /^\[.\]\s*/.exec(label); // multi-select options render as "[ ] Label"
+      if (cb) {
+        multiSelect = true;
+        label = label.slice(cb[0].length).trim();
+      }
+      options.push({ n: Number(m[2]), label });
     }
     if (options.length < 2) return null;
     // context = the block above the options, verbatim (the command box for a permission
@@ -677,7 +684,7 @@ export class SessionManager {
       .join("\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
-    return { context, options, selectedIdx: selectedIdx < 0 ? 0 : selectedIdx };
+    return { context, options, multiSelect, selectedIdx: selectedIdx < 0 ? 0 : selectedIdx };
   }
 
   // A session is "busy" only while claude is actively generating or running a tool —
@@ -730,7 +737,7 @@ export class SessionManager {
       next[s.id] = this.paneShowsBusy(pane) ? "busy" : "idle";
       remote[s.id] = this.paneShowsRemote(pane);
       const p = this.parsePrompt(pane);
-      prompt[s.id] = p ? { context: p.context, options: p.options } : null;
+      prompt[s.id] = p ? { context: p.context, options: p.options, multiSelect: p.multiSelect } : null;
       let clients = "";
       try {
         clients = this.o.runner.run("tmux", ["list-clients", "-t", s.tmuxName]).trim();
@@ -757,6 +764,48 @@ export class SessionManager {
   }
   sessionPrompt(id: string): SessionPrompt | null {
     return this.promptMap[id] ?? null;
+  }
+
+  // Answer a multi-select AskUserQuestion from the panel: toggle each chosen option with
+  // Enter (cursor stays put after a toggle), then Right → the Submit tab, then Enter to
+  // confirm. Mirrors the exact CLI flow: ↑/↓ navigate, Enter toggles [ ]→[✔], → submits.
+  answerPromptMulti(id: string, ns: number[]): { ok: boolean } {
+    const s = this.o.store.getSession(id);
+    if (!s) throw new HttpError(404, `no session ${id}`);
+    let pane = "";
+    try {
+      pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
+    } catch {
+      /* fall through */
+    }
+    const p = this.parsePrompt(pane);
+    if (!p || !p.multiSelect) throw new HttpError(409, "지금 이 세션에 다중선택 질문이 없어요.");
+    const targets = ns.map((n) => p.options.findIndex((o) => o.n === n)).filter((i) => i >= 0);
+    if (!targets.length) throw new HttpError(400, "고른 옵션이 없어요.");
+    const send = (...keys: string[]) => this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, ...keys]);
+    const nap = (sec: string) => {
+      try {
+        this.o.runner.run("sleep", [sec]);
+      } catch {
+        /* ignore */
+      }
+    };
+    let cursor = p.selectedIdx;
+    for (const idx of targets) {
+      const delta = idx - cursor;
+      const key = delta >= 0 ? "Down" : "Up";
+      for (let i = 0; i < Math.abs(delta); i++) {
+        send(key);
+        nap("0.12");
+      }
+      send("Enter"); // toggle [ ]→[✔]; cursor stays on this option
+      nap("0.15");
+      cursor = idx;
+    }
+    send("Right"); // → to the Submit tab (Review your answers)
+    nap("0.4");
+    send("Enter"); // confirm: "1. Submit answers"
+    return { ok: true };
   }
 
   // Answer an on-screen AskUserQuestion with free text: navigate to its "Type something"

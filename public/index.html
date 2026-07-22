@@ -26,7 +26,9 @@
   .popt { text-align: left; border: 0; border-radius: 10px; background: #23272e; color: #e8eaed; padding: 12px 14px; font: inherit; font-size: 14px; cursor: pointer; line-height: 1.35; }
   .popt:hover { background: #2b3038; }
   .popt:disabled { opacity: .5; }
+  .popt.sel { background: #24402c; box-shadow: inset 0 0 0 2px #7ee2a8; }
   .popt b { color: #7ee2a8; margin-right: 8px; }
+  .mtag { font-size: 11px; color: #7ee2a8; font-weight: 600; }
   .card.prompt { border-color: #1e3326; }
   .sec-h { max-width: 640px; margin: 0 auto 8px; font-size: 12px; letter-spacing: .06em; color: #f5a623; text-transform: uppercase; font-weight: 700; }
   .card { background: #16191d; border-radius: 16px; padding: 18px 20px; margin-bottom: 12px; border: 1px solid #2a2320; }
@@ -194,49 +196,74 @@
     badge.style.display = total ? "inline-block" : "none";
   }
   // 세션 화면에 뜬 네이티브 선택메뉴(권한/AskUserQuestion/yes-no/…)를 카드로 미러링
+  // Prompt cards are reconciled (not full-innerHTML each poll) so multi-select toggles
+  // and half-typed memos survive the 2s refresh while the same menu is up.
   function renderPrompts(sessions) {
     const withPrompt = sessions.filter((s) => s.status === "running" && s.prompt && s.prompt.options && s.prompt.options.length);
     const el = document.getElementById("prompts");
-    el.innerHTML = withPrompt.map((s) => {
-      const who = esc(s.label || s.tmuxName);
-      const opts = s.prompt.options.map((o) =>
-        `<button class="popt" data-id="${esc(s.id)}" data-n="${Number(o.n)}"><b>${Number(o.n)}</b>${esc(o.label)}</button>`).join("");
-      const ctx = s.prompt.context ? `<pre class="pctx">${esc(s.prompt.context)}</pre>` : "";
-      const hasMemo = s.prompt.options.some((o) => /type something/i.test(o.label));
-      const memoBox = hasMemo
-        ? `<textarea class="pmemo" placeholder="메모로 답하기 (자유입력)"></textarea><button class="send pmemo-send" data-id="${esc(s.id)}">메모 전송</button>`
-        : "";
-      return `<div class="card prompt">
-          <div class="dhead"><span class="tag">▸</span> ${who}</div>
-          <div class="dpath">${esc(s.projectPath || s.project || "")}</div>
-          ${ctx}
-          <div class="popts">${opts}</div>
-          ${memoBox}
-        </div>`;
-    }).join("");
-    el.querySelectorAll(".popt").forEach((b) => b.addEventListener("click", () => promptAnswer(b)));
-    el.querySelectorAll(".pmemo-send").forEach((b) => b.addEventListener("click", () => promptMemo(b)));
+    const want = new Map(withPrompt.map((s) => [s.id, s]));
+    [...el.children].forEach((c) => { if (!want.has(c.dataset.sid)) c.remove(); });
+    for (const s of withPrompt) {
+      const sig = (s.prompt.multiSelect ? "m|" : "s|") + (s.prompt.context || "") + "|" + s.prompt.options.map((o) => o.n + o.label).join(",");
+      const existing = [...el.children].find((c) => c.dataset.sid === s.id);
+      if (existing && existing.dataset.sig === sig) continue; // unchanged → keep toggles/memo
+      const card = buildPromptCard(s, sig);
+      if (existing) existing.replaceWith(card); else el.appendChild(card);
+    }
     updateDecHeader();
   }
-  async function promptAnswer(btn) {
-    const { id, n } = btn.dataset;
-    btn.parentElement.querySelectorAll(".popt").forEach((x) => (x.disabled = true));
-    try {
-      const res = await fetch(q(`/api/sessions/${id}/prompt-answer`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ n: Number(n) }) });
-      if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.error || "전송 실패"); }
-    } catch (e) { /* 다음 폴에서 회복 */ }
-    pollSessions();
+  function buildPromptCard(s, sig) {
+    const multi = !!s.prompt.multiSelect;
+    const id = s.id;
+    const el = document.createElement("div");
+    el.className = "card prompt";
+    el.dataset.sid = id;
+    el.dataset.sig = sig;
+    const ctx = s.prompt.context ? `<pre class="pctx">${esc(s.prompt.context)}</pre>` : "";
+    const opts = s.prompt.options.map((o) =>
+      `<button class="popt${multi ? " mpopt" : ""}" data-n="${Number(o.n)}"><b>${Number(o.n)}</b>${esc(o.label)}</button>`).join("");
+    const submitBtn = multi ? `<button class="send mpsubmit">선택 완료</button>` : "";
+    const hasMemo = s.prompt.options.some((o) => /type something/i.test(o.label));
+    const memoBox = hasMemo ? `<textarea class="pmemo" placeholder="메모로 답하기 (자유입력)"></textarea><button class="send pmemo-send">메모 전송</button>` : "";
+    el.innerHTML = `
+      <div class="dhead"><span class="tag">▸</span> ${esc(s.label || s.tmuxName)}${multi ? ' <span class="mtag">여러 개 선택</span>' : ""}</div>
+      <div class="dpath">${esc(s.projectPath || s.project || "")}</div>
+      ${ctx}
+      <div class="popts">${opts}</div>
+      ${submitBtn}
+      ${memoBox}`;
+    el.querySelectorAll(".popt").forEach((b) => b.addEventListener("click", () => {
+      if (multi) {
+        b.classList.toggle("sel");
+        const n = el.querySelectorAll(".mpopt.sel").length;
+        const sb = el.querySelector(".mpsubmit");
+        if (sb) sb.textContent = n ? `선택 완료 (${n}개)` : "선택 완료";
+      } else {
+        el.querySelectorAll(".popt").forEach((x) => (x.disabled = true));
+        sendPrompt(`/api/sessions/${id}/prompt-answer`, { n: Number(b.dataset.n) });
+      }
+    }));
+    const sub = el.querySelector(".mpsubmit");
+    if (sub) sub.addEventListener("click", () => {
+      const ns = [...el.querySelectorAll(".mpopt.sel")].map((x) => Number(x.dataset.n));
+      if (!ns.length) return;
+      sub.disabled = true;
+      sendPrompt(`/api/sessions/${id}/prompt-multi`, { ns }, sub);
+    });
+    const ms = el.querySelector(".pmemo-send");
+    if (ms) ms.addEventListener("click", () => {
+      const text = (el.querySelector(".pmemo").value || "").trim();
+      if (!text) { el.querySelector(".pmemo").focus(); return; }
+      ms.disabled = true;
+      sendPrompt(`/api/sessions/${id}/prompt-memo`, { text }, ms);
+    });
+    return el;
   }
-  async function promptMemo(btn) {
-    const card = btn.closest(".card");
-    const ta = card.querySelector(".pmemo");
-    const text = (ta.value || "").trim();
-    if (!text) { ta.focus(); return; }
-    btn.disabled = true;
+  async function sendPrompt(url, body, btn) {
     try {
-      const res = await fetch(q(`/api/sessions/${btn.dataset.id}/prompt-memo`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
-      if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.error || "전송 실패"); btn.disabled = false; }
-    } catch (e) { btn.disabled = false; }
+      const res = await fetch(q(url), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.error || "전송 실패"); if (btn) btn.disabled = false; }
+    } catch (e) { if (btn) btn.disabled = false; }
     pollSessions();
   }
   function buildDecisionCard(item) {

@@ -197,6 +197,43 @@ test("answerPromptMemo: picks 'Type something', types the memo, submits", () => 
   expect(sk.filter((c) => c.args.includes("Enter")).length).toBe(2); // 입력창 열기 + 제출
 });
 
+const MULTI = [
+  "좋아하는 과일 다 골라",
+  "❯ 1. [ ] 사과",
+  "  2. [ ] 바나나",
+  "  3. [ ] 포도",
+  "Enter to select · ↑/↓ to navigate · Esc to cancel",
+].join("\n");
+
+test("sampleActivity: detects multi-select ([ ] checkboxes) and strips them from labels", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = MULTI;
+  mgr.sampleActivity();
+  const p = mgr.sessionPrompt(e.id)!;
+  expect(p.multiSelect).toBe(true);
+  expect(p.options).toEqual([{ n: 1, label: "사과" }, { n: 2, label: "바나나" }, { n: 3, label: "포도" }]);
+});
+
+test("answerPromptMulti: toggles each chosen option, then Right + Enter to submit", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = MULTI; // cursor on option 1
+  runner.calls.length = 0;
+  mgr.answerPromptMulti(e.id, [1, 3]); // toggle 1 (delta 0), then 3 (down 2)
+  const sk = runner.calls.filter((c) => c.cmd === "tmux" && c.args[0] === "send-keys");
+  expect(sk.filter((c) => c.args.includes("Down")).length).toBe(2); // 1 → 3
+  expect(sk.filter((c) => c.args.includes("Enter")).length).toBe(3); // toggle 1, toggle 3, confirm submit
+  expect(sk.filter((c) => c.args.includes("Right")).length).toBe(1); // → to Submit tab
+});
+
+test("answerPromptMulti: 409 when the prompt is not multi-select", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = MENU; // single-select
+  expect(() => mgr.answerPromptMulti(e.id, [1])).toThrow(HttpError);
+});
+
 test("answerPromptMemo: 409 when there's no 'Type something' option", () => {
   const { mgr, runner } = setup();
   const e = mgr.launch("myapp");

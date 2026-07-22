@@ -37,6 +37,7 @@ export interface PromptOption {
 export interface SessionPrompt {
   context: string; // the block above the options: command box / question, verbatim
   options: PromptOption[];
+  multiSelect?: boolean; // options are [ ] checkboxes → toggle several, then submit
 }
 
 export type SessionStatus = "running" | "stopped";

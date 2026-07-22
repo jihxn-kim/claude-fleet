@@ -191,6 +191,16 @@ export function createServer(
             return sendHttpError(res, e);
           }
         }
+        const pmulti = path.match(/^\/api\/sessions\/([^/]+)\/prompt-multi$/);
+        if (pmulti && method === "POST") {
+          if (!sessions) return send(res, 404, { error: "sessions disabled" });
+          try {
+            const { ns } = (await readJson(req)) as { ns: number[] };
+            return send(res, 200, sessions.answerPromptMulti(pmulti[1], (Array.isArray(ns) ? ns : []).map(Number)));
+          } catch (e) {
+            return sendHttpError(res, e);
+          }
+        }
         const sm = path.match(/^\/api\/sessions\/([^/]+)\/(resume|close|open-terminal|background-terminal|terminate|remote-control|label)$/);
         if (sm && method === "POST") {
           if (!sessions) return send(res, 404, { error: "sessions disabled" });
