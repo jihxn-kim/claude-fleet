@@ -302,9 +302,8 @@ export class SessionManager {
     const term = this.getTerminal();
     if (term === "iterm") {
       // iTerm2 native tmux integration (-CC): tmux windows become real iTerm windows
-      // with native scroll / selection / clipboard — no copy-mode cursor or snap-back.
-      // (Enable Settings › General › tmux › "Automatically bury the tmux client session
-      //  after connecting" to hide the control window.)
+      // with native scroll / selection / clipboard. Setup (the one-time "bury tmux
+      // client" iTerm setting) + non-iTerm fallback are documented in docs/TERMINALS.md.
       let attached = false;
       try {
         attached = this.o.runner.run("tmux", ["list-clients", "-t", s.tmuxName, "-F", "#{client_tty}"]).trim().length > 0;
