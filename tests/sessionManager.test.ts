@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { mkdtempSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionStore } from "../src/sessionStore.js";
@@ -55,6 +55,26 @@ test("launch: writes mcp config, runs tmux new-session with claude --session-id,
     "--allowedTools", "mcp__fleet__request_decision",
   ]);
   expect(store.getSession(e.id)!.status).toBe("running");
+});
+
+test("sessionActivity: busy when transcript written recently, idle when stale", () => {
+  const { mgr, dir } = setup();
+  const e = mgr.launch("myapp"); // running session
+  const folder = join(dir, "claude-projects", "any-folder");
+  mkdirSync(folder, { recursive: true });
+  const file = join(folder, `${e.id}.jsonl`);
+  writeFileSync(file, "{}\n"); // fresh mtime
+  expect(mgr.sessionActivity()[e.id]).toBe("busy");
+  const stale = new Date(Date.now() - 20_000); // older than the 15s window
+  utimesSync(file, stale, stale);
+  expect(mgr.sessionActivity()[e.id]).toBe("idle");
+});
+
+test("sessionActivity: only running sessions get a value", () => {
+  const { mgr } = setup();
+  const e = mgr.launch("myapp");
+  mgr.close(e.id); // now stopped
+  expect(mgr.sessionActivity()[e.id]).toBeUndefined();
 });
 
 test("launch unknown project throws HttpError 400", () => {

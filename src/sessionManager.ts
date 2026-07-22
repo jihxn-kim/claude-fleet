@@ -498,12 +498,55 @@ export class SessionManager {
     return new Set(this.agents().map((a) => a.sessionId ?? a.id ?? "").filter(Boolean));
   }
 
-  // id → live activity ("busy" | "idle" | "waiting" | "blocked").
+  // Locate a session's transcript file (.jsonl). Cached once resolved.
+  private sessionFileCache = new Map<string, string>();
+  private resolveSessionFile(id: string, projectPath?: string): string | null {
+    const cached = this.sessionFileCache.get(id);
+    if (cached && existsSync(cached)) return cached;
+    const candidates: string[] = [];
+    if (projectPath) candidates.push(join(this.o.claudeProjectsDir, encodeProjectDir(projectPath), `${id}.jsonl`));
+    for (const c of candidates) {
+      if (existsSync(c)) { this.sessionFileCache.set(id, c); return c; }
+    }
+    // encodeProjectDir is lossy → fall back to scanning every project folder
+    try {
+      for (const folder of readdirSync(this.o.claudeProjectsDir)) {
+        const full = join(this.o.claudeProjectsDir, folder, `${id}.jsonl`);
+        if (existsSync(full)) { this.sessionFileCache.set(id, full); return full; }
+      }
+    } catch {
+      /* ignore */
+    }
+    return null;
+  }
+
+  // id → live activity ("busy" | "idle"). A session is "busy" if `claude agents`
+  // reports it working OR its transcript file was written in the last few seconds.
+  // The mtime signal is what makes this real-time even for detached tmux sessions,
+  // which drop out of `claude agents --json` once idle.
   sessionActivity(): Record<string, string> {
-    const m: Record<string, string> = {};
+    const BUSY_MS = 15_000;
+    const now = Date.now();
+    const agentBusy = new Set<string>();
     for (const a of this.agents()) {
       const id = a.sessionId ?? a.id;
-      if (id) m[id] = a.status ?? a.state ?? "";
+      if (id && a.status === "busy") agentBusy.add(id);
+    }
+    const m: Record<string, string> = {};
+    for (const s of this.o.store.listSessions()) {
+      if (s.status !== "running") continue;
+      let busy = agentBusy.has(s.id);
+      if (!busy) {
+        const file = this.resolveSessionFile(s.id, s.projectPath);
+        if (file) {
+          try {
+            busy = now - statSync(file).mtimeMs < BUSY_MS;
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      m[s.id] = busy ? "busy" : "idle";
     }
     return m;
   }
