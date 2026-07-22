@@ -217,7 +217,7 @@ export class SessionManager {
     if (s.status === "running") throw new HttpError(409, `session ${id} already running`);
     if (this.o.store.runningCount(s.project) >= 2) throw new HttpError(409, `max 2 running for ${s.project}`);
     const mcpPath = this.writeMcpConfig(id);
-    this.spawnTmux(s.tmuxName, s.projectPath, this.claudeArgv("--resume", id, mcpPath));
+    this.spawnTmux(s.tmuxName, s.projectPath, this.claudeArgv("--resume", id, mcpPath, this.activeSessionIds().has(id)));
     s.status = "running";
     s.startedAt = this.now();
     s.lastSeen = this.now();
@@ -300,8 +300,10 @@ export class SessionManager {
     if (!proj) throw new HttpError(400, `unknown project: ${project}`);
     const dir = join(this.o.claudeProjectsDir, encodeProjectDir(proj.path));
     if (!existsSync(dir)) return [];
+    const managed = new Set(this.o.store.listSessions().map((x) => x.id));
     const files = readdirSync(dir)
       .filter((f) => f.endsWith(".jsonl"))
+      .filter((f) => !managed.has(f.replace(/\.jsonl$/, ""))) // hide sessions fleet already manages
       .filter((f) => hasConversation(join(dir, f))); // skip empty stub sessions
     const out: AvailableSession[] = files.map((f) => {
       const full = join(dir, f);
@@ -325,7 +327,7 @@ export class SessionManager {
     if (!existsSync(file)) throw new HttpError(404, `no session ${id} in project ${project}`);
     const tmuxName = `fleet__${slug(project)}__${id.slice(0, 6)}`;
     const mcpPath = this.writeMcpConfig(id);
-    this.spawnTmux(tmuxName, proj.path, this.claudeArgv("--resume", id, mcpPath));
+    this.spawnTmux(tmuxName, proj.path, this.claudeArgv("--resume", id, mcpPath, this.activeSessionIds().has(id)));
     const entry: SessionEntry = {
       id, project, projectPath: proj.path, tmuxName,
       status: "running", startedAt: this.now(), lastSeen: this.now(),
@@ -359,9 +361,11 @@ export class SessionManager {
       }
     }
     all.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    const managed = new Set(this.o.store.listSessions().map((x) => x.id));
     const out: AllSession[] = [];
     for (const s of all) {
       if (out.length >= limit) break;
+      if (managed.has(s.id)) continue; // hide sessions fleet already manages
       const cwd = sessionCwd(s.full);
       if (!cwd || !existsSync(cwd)) continue;
       if (!hasConversation(s.full)) continue; // skip stubs
@@ -417,11 +421,22 @@ export class SessionManager {
     return out.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("fleet__"));
   }
 
-  private claudeArgv(resumeFlag: string, id: string, mcpPath: string): string[] {
+  // Active (running) claude session ids, so we only --fork-session when we
+  // must — resuming a NON-running session in place avoids a duplicate copy.
+  private activeSessionIds(): Set<string> {
+    try {
+      const arr = JSON.parse(this.o.runner.run("claude", ["agents", "--json"])) as Array<{ sessionId?: string; id?: string }>;
+      return new Set(arr.map((a) => a.sessionId ?? a.id ?? "").filter(Boolean));
+    } catch {
+      return new Set();
+    }
+  }
+
+  private claudeArgv(resumeFlag: string, id: string, mcpPath: string, fork = false): string[] {
     // Resuming a session that's live as a background agent fails ("currently
-    // running as a background agent"); --fork-session branches a copy (with
-    // full history) that fleet can run without conflicting with the original.
-    const head = resumeFlag === "--resume" ? [resumeFlag, id, "--fork-session"] : [resumeFlag, id];
+    // running as a background agent"); --fork-session branches a copy only
+    // then. A non-running session resumes in place (same id, no duplicate).
+    const head = resumeFlag === "--resume" && fork ? [resumeFlag, id, "--fork-session"] : [resumeFlag, id];
     return [
       ...head,
       "--permission-mode", this.getPermissionMode(),
