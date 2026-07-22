@@ -215,8 +215,6 @@ export class SessionManager {
   //  - extended-keys on + the extkeys feature → Shift+Enter reaches claude as a
   //    real newline instead of collapsing to a plain Enter (submit).
   //  - the RGB feature → 24-bit color themes render correctly.
-  //  - mouse drag-end copies to the macOS clipboard WITHOUT leaving copy mode
-  //    (default is copy-pipe-and-cancel, which snaps the view back to the bottom).
   // Server-level, so this only needs to run once per tmux server.
   private serverOptsEnsured = false;
   private ensureServerOpts(): void {
@@ -234,9 +232,6 @@ export class SessionManager {
         if (!features.includes(feat)) {
           this.o.runner.run("tmux", ["set-option", "-sa", "terminal-features", `xterm*:${feat}`]);
         }
-      }
-      for (const table of ["copy-mode", "copy-mode-vi"]) {
-        this.o.runner.run("tmux", ["bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe", "pbcopy"]);
       }
     } catch {
       /* best-effort */
