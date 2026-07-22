@@ -603,8 +603,7 @@ export class SessionManager {
 
   private activityMap: Record<string, string> = {}; // id → "busy" | "idle"
   private terminalMap: Record<string, boolean> = {}; // id → a terminal window is attached
-  private remoteMap: Record<string, boolean> = {}; // id → remote-control connected (latched)
-  private remoteInit = new Set<string>(); // ids whose remote state we've seeded from scrollback
+  private remoteMap: Record<string, boolean> = {}; // id → remote-control connected
 
   // A session is "busy" only while claude is actively generating or running a tool —
   // exactly when its status line shows "esc to interrupt". That line is stable through a
@@ -616,44 +615,23 @@ export class SessionManager {
     return /esc to interrupt/i.test(pane.split("\n").slice(-8).join("\n"));
   }
 
-  // Remote-control has no local state file/process to query — the only observable signal
-  // is the connect/disconnect line claude prints ("/remote-control is active" vs "Remote
-  // Control disconnected."). Those scroll off screen, so we latch: catch whichever marker
-  // is most recent in the visible pane and hold it; seed a not-yet-tracked session by
-  // scanning its scrollback once. Catches manual terminal connects and panel ones alike.
-  private detectRemote(id: string, tmuxName: string, pane: string): boolean {
-    const lines = pane.split("\n");
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (/\/remote-control is active/i.test(lines[i])) return true;
-      if (/Remote Control disconnected/i.test(lines[i])) return false;
-    }
-    if (!this.remoteInit.has(id)) return this.scanRemoteState(tmuxName);
-    return this.remoteMap[id] ?? false; // no marker on screen → keep the latched value
-  }
-  private scanRemoteState(tmuxName: string): boolean {
-    try {
-      const hist = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", tmuxName, "-S", "-2000"]).split("\n");
-      for (let i = hist.length - 1; i >= 0; i--) {
-        if (/\/remote-control is active/i.test(hist[i])) return true;
-        if (/Remote Control disconnected/i.test(hist[i])) return false;
-      }
-    } catch {
-      /* ignore */
-    }
-    return false;
+  // While remote-control is connected, claude shows a persistent "/rc" affordance in the
+  // bottom-right status area — unlike the "is active" line, it doesn't scroll away, so a
+  // single bottom-of-pane check is enough. Reflects panel AND manual terminal connects.
+  private paneShowsRemote(pane: string): boolean {
+    return /\/rc\b/.test(pane.split("\n").slice(-4).join("\n"));
   }
 
   // Sample every running session once. Called on a fixed interval by the server, so
   // detection cadence is independent of how many panels are polling. In one pass it
-  // derives busy/idle, whether a terminal window is attached (tmux clients), and latches
-  // Claude's native remote-control state.
+  // derives busy/idle, whether a terminal window is attached (tmux clients), and whether
+  // Claude's native remote-control is connected.
   sampleActivity(): void {
     const next: Record<string, string> = {};
     const term: Record<string, boolean> = {};
-    const runningIds = new Set<string>();
+    const remote: Record<string, boolean> = {};
     for (const s of this.o.store.listSessions()) {
       if (s.status !== "running") continue;
-      runningIds.add(s.id);
       let pane: string | null = null;
       try {
         pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
@@ -663,11 +641,11 @@ export class SessionManager {
       if (pane === null) {
         next[s.id] = "idle";
         term[s.id] = false;
-        continue; // leave the latched remote state untouched
+        remote[s.id] = false;
+        continue;
       }
       next[s.id] = this.paneShowsBusy(pane) ? "busy" : "idle";
-      this.remoteMap[s.id] = this.detectRemote(s.id, s.tmuxName, pane);
-      this.remoteInit.add(s.id);
+      remote[s.id] = this.paneShowsRemote(pane);
       let clients = "";
       try {
         clients = this.o.runner.run("tmux", ["list-clients", "-t", s.tmuxName]).trim();
@@ -676,14 +654,9 @@ export class SessionManager {
       }
       term[s.id] = clients.length > 0;
     }
-    for (const id of Object.keys(this.remoteMap)) {
-      if (!runningIds.has(id)) {
-        delete this.remoteMap[id];
-        this.remoteInit.delete(id);
-      }
-    }
     this.activityMap = next;
     this.terminalMap = term;
+    this.remoteMap = remote;
   }
 
   // Read the most recent sample (cheap; no shelling out here).
