@@ -198,14 +198,26 @@ export class SessionManager {
     return entry;
   }
 
-  // Create a detached tmux session running claude. `-e COLORTERM=truecolor`
-  // so claude renders themes in real 24-bit color (the launchd env lacks it),
-  // and mouse mode on so the transcript can be scrolled when attached.
+  // Create a detached tmux session running claude. `-e COLORTERM=truecolor` so claude
+  // renders 24-bit color themes (the launchd env lacks it). mouse OFF + alternate-screen
+  // OFF make the attached terminal behave like a plain (non-tmux) claude: the native
+  // terminal handles scroll/select/click, so scrolling up + dragging doesn't get yanked
+  // to the bottom and clicks aren't swallowed by tmux copy-mode. Scoped to fleet sessions.
   private spawnTmux(tmuxName: string, cwd: string, argv: string[]): void {
     this.o.runner.run("tmux", ["new-session", "-d", "-s", tmuxName, "-c", cwd, "-e", "COLORTERM=truecolor", "claude", ...argv]);
     this.ensureServerOpts();
+    this.nativeTerminalOpts(tmuxName);
+  }
+
+  // mouse off + alternate-screen off for one session (best-effort, each independent).
+  private nativeTerminalOpts(tmuxName: string): void {
     try {
-      this.o.runner.run("tmux", ["set-option", "-t", tmuxName, "mouse", "on"]);
+      this.o.runner.run("tmux", ["set-option", "-t", tmuxName, "mouse", "off"]);
+    } catch {
+      /* best-effort */
+    }
+    try {
+      this.o.runner.run("tmux", ["set-window-option", "-t", tmuxName, "alternate-screen", "off"]);
     } catch {
       /* best-effort */
     }
