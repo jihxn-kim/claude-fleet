@@ -215,10 +215,10 @@ export class SessionManager {
   //  - extended-keys on + the extkeys feature → Shift+Enter reaches claude as a
   //    real newline instead of collapsing to a plain Enter (submit).
   //  - the RGB feature → 24-bit color themes render correctly.
-  //  - drag-select disarmed in copy mode → a stray horizontal wiggle while
-  //    wheel-scrolling no longer hijacks the scroll into a text selection. Wheel
-  //    scroll bindings are untouched. To select text deliberately, hold ⌥ Option
-  //    and drag (iTerm2 does a native selection, bypassing tmux mouse reporting).
+  // Mouse/copy-mode bindings are left at tmux defaults on purpose: rebinding them to
+  // stop accidental drag-select during scroll also kills intentional selection (tmux
+  // can't tell the two drags apart). The right fix for that lives in iTerm2 (uncheck
+  // "Report mouse clicks & drags"), not here.
   // Server-level, so this only needs to run once per tmux server.
   private serverOptsEnsured = false;
   private ensureServerOpts(): void {
@@ -237,19 +237,6 @@ export class SessionManager {
           this.o.runner.run("tmux", ["set-option", "-sa", "terminal-features", `xterm*:${feat}`]);
         }
       }
-      for (const table of ["copy-mode", "copy-mode-vi"]) {
-        this.o.runner.run("tmux", ["bind-key", "-T", table, "MouseDrag1Pane", "select-pane"]);
-        try {
-          this.o.runner.run("tmux", ["unbind-key", "-T", table, "MouseDragEnd1Pane"]);
-        } catch {
-          /* already unbound */
-        }
-      }
-      // Also disarm the root-table drag: its default `copy-mode -M` ENTERS copy mode and
-      // begins a selection when a drag starts before any scroll (the trackpad gesture
-      // registers as a drag first). Replace that selection-start with select-pane, while
-      // keeping the app/in-mode passthrough branch untouched.
-      this.o.runner.run("tmux", ["bind-key", "-n", "MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "select-pane"]);
     } catch {
       /* best-effort */
     }
