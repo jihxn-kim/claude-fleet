@@ -498,53 +498,27 @@ export class SessionManager {
     return new Set(this.agents().map((a) => a.sessionId ?? a.id ?? "").filter(Boolean));
   }
 
-  // Locate a session's transcript file (.jsonl). Cached once resolved.
-  private sessionFileCache = new Map<string, string>();
-  private resolveSessionFile(id: string, projectPath?: string): string | null {
-    const cached = this.sessionFileCache.get(id);
-    if (cached && existsSync(cached)) return cached;
-    const candidates: string[] = [];
-    if (projectPath) candidates.push(join(this.o.claudeProjectsDir, encodeProjectDir(projectPath), `${id}.jsonl`));
-    for (const c of candidates) {
-      if (existsSync(c)) { this.sessionFileCache.set(id, c); return c; }
-    }
-    // encodeProjectDir is lossy → fall back to scanning every project folder
-    try {
-      for (const folder of readdirSync(this.o.claudeProjectsDir)) {
-        const full = join(this.o.claudeProjectsDir, folder, `${id}.jsonl`);
-        if (existsSync(full)) { this.sessionFileCache.set(id, full); return full; }
-      }
-    } catch {
-      /* ignore */
-    }
-    return null;
-  }
-
-  // id → live activity ("busy" | "idle"). A session is "busy" if `claude agents`
-  // reports it working OR its transcript file was written in the last few seconds.
-  // The mtime signal is what makes this real-time even for detached tmux sessions,
-  // which drop out of `claude agents --json` once idle.
+  // id → live activity ("busy" | "idle"). Uses the tmux session's own last-activity
+  // time (pane output), so it stays correct even when the running claude forked to a
+  // new session id (--fork-session) and writes to a different transcript file. A
+  // working claude keeps redrawing (spinner/elapsed counter), which refreshes
+  // session_activity; an idle one at the prompt does not.
   sessionActivity(): Record<string, string> {
-    const BUSY_MS = 15_000;
+    const BUSY_MS = 10_000;
     const now = Date.now();
-    const agentBusy = new Set<string>();
-    for (const a of this.agents()) {
-      const id = a.sessionId ?? a.id;
-      if (id && a.status === "busy") agentBusy.add(id);
-    }
     const m: Record<string, string> = {};
     for (const s of this.o.store.listSessions()) {
       if (s.status !== "running") continue;
-      let busy = agentBusy.has(s.id);
-      if (!busy) {
-        const file = this.resolveSessionFile(s.id, s.projectPath);
-        if (file) {
-          try {
-            busy = now - statSync(file).mtimeMs < BUSY_MS;
-          } catch {
-            /* ignore */
-          }
+      let busy = false;
+      try {
+        const raw = this.o.runner.run("tmux", ["display-message", "-p", "-t", s.tmuxName, "#{session_activity}"]).trim();
+        const ts = Number(raw);
+        if (ts > 0) {
+          const ms = ts < 1e12 ? ts * 1000 : ts; // tmux reports seconds; guard if ms
+          busy = now - ms < BUSY_MS;
         }
+      } catch {
+        /* tmux session gone → treat as idle */
       }
       m[s.id] = busy ? "busy" : "idle";
     }

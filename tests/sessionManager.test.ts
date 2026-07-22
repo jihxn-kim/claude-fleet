@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { mkdtempSync, existsSync, readFileSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionStore } from "../src/sessionStore.js";
@@ -8,12 +8,14 @@ import { SessionManager, HttpError, type CommandRunner } from "../src/sessionMan
 class FakeRunner implements CommandRunner {
   calls: Array<{ cmd: string; args: string[] }> = [];
   listOutput = "";
+  activityTs = ""; // returned for `tmux display-message ... #{session_activity}`
   failKeys = new Set<string>();
   run(cmd: string, args: string[]): string {
     this.calls.push({ cmd, args });
     const sub = args[0];
     if (this.failKeys.has(sub)) throw new Error(`fake fail ${sub}`);
     if (cmd === "tmux" && sub === "list-sessions") return this.listOutput;
+    if (cmd === "tmux" && sub === "display-message") return this.activityTs;
     return "";
   }
 }
@@ -57,16 +59,12 @@ test("launch: writes mcp config, runs tmux new-session with claude --session-id,
   expect(store.getSession(e.id)!.status).toBe("running");
 });
 
-test("sessionActivity: busy when transcript written recently, idle when stale", () => {
-  const { mgr, dir } = setup();
+test("sessionActivity: busy when tmux session_activity is recent, idle when stale", () => {
+  const { mgr, runner } = setup();
   const e = mgr.launch("myapp"); // running session
-  const folder = join(dir, "claude-projects", "any-folder");
-  mkdirSync(folder, { recursive: true });
-  const file = join(folder, `${e.id}.jsonl`);
-  writeFileSync(file, "{}\n"); // fresh mtime
+  runner.activityTs = String(Math.floor(Date.now() / 1000)); // now (epoch seconds)
   expect(mgr.sessionActivity()[e.id]).toBe("busy");
-  const stale = new Date(Date.now() - 20_000); // older than the 15s window
-  utimesSync(file, stale, stale);
+  runner.activityTs = String(Math.floor(Date.now() / 1000) - 60); // 60s ago
   expect(mgr.sessionActivity()[e.id]).toBe("idle");
 });
 
