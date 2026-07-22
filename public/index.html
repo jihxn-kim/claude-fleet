@@ -202,14 +202,20 @@
       const opts = s.prompt.options.map((o) =>
         `<button class="popt" data-id="${esc(s.id)}" data-n="${Number(o.n)}"><b>${Number(o.n)}</b>${esc(o.label)}</button>`).join("");
       const ctx = s.prompt.context ? `<pre class="pctx">${esc(s.prompt.context)}</pre>` : "";
+      const hasMemo = s.prompt.options.some((o) => /type something/i.test(o.label));
+      const memoBox = hasMemo
+        ? `<textarea class="pmemo" placeholder="메모로 답하기 (자유입력)"></textarea><button class="send pmemo-send" data-id="${esc(s.id)}">메모 전송</button>`
+        : "";
       return `<div class="card prompt">
           <div class="dhead"><span class="tag">▸</span> ${who}</div>
           <div class="dpath">${esc(s.projectPath || s.project || "")}</div>
           ${ctx}
           <div class="popts">${opts}</div>
+          ${memoBox}
         </div>`;
     }).join("");
     el.querySelectorAll(".popt").forEach((b) => b.addEventListener("click", () => promptAnswer(b)));
+    el.querySelectorAll(".pmemo-send").forEach((b) => b.addEventListener("click", () => promptMemo(b)));
     updateDecHeader();
   }
   async function promptAnswer(btn) {
@@ -219,6 +225,18 @@
       const res = await fetch(q(`/api/sessions/${id}/prompt-answer`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ n: Number(n) }) });
       if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.error || "전송 실패"); }
     } catch (e) { /* 다음 폴에서 회복 */ }
+    pollSessions();
+  }
+  async function promptMemo(btn) {
+    const card = btn.closest(".card");
+    const ta = card.querySelector(".pmemo");
+    const text = (ta.value || "").trim();
+    if (!text) { ta.focus(); return; }
+    btn.disabled = true;
+    try {
+      const res = await fetch(q(`/api/sessions/${btn.dataset.id}/prompt-memo`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
+      if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.error || "전송 실패"); btn.disabled = false; }
+    } catch (e) { btn.disabled = false; }
     pollSessions();
   }
   function buildDecisionCard(item) {

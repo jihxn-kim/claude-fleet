@@ -181,6 +181,16 @@ export function createServer(
             return sendHttpError(res, e);
           }
         }
+        const pm = path.match(/^\/api\/sessions\/([^/]+)\/prompt-memo$/);
+        if (pm && method === "POST") {
+          if (!sessions) return send(res, 404, { error: "sessions disabled" });
+          try {
+            const { text } = (await readJson(req)) as { text: string };
+            return send(res, 200, sessions.answerPromptMemo(pm[1], String(text ?? "")));
+          } catch (e) {
+            return sendHttpError(res, e);
+          }
+        }
         const sm = path.match(/^\/api\/sessions\/([^/]+)\/(resume|close|open-terminal|background-terminal|terminate|remote-control|label)$/);
         if (sm && method === "POST") {
           if (!sessions) return send(res, 404, { error: "sessions disabled" });

@@ -180,6 +180,30 @@ test("sampleActivity: yes/no permission prompt — 'Do you want to proceed?' is 
   expect(p.context).toContain("Contains shell syntax");
 });
 
+test("answerPromptMemo: picks 'Type something', types the memo, submits", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = [
+    "질문?",
+    "❯ 1. 옵션A",
+    "  2. Type something.",
+    "Enter to select · Esc to cancel",
+  ].join("\n");
+  runner.calls.length = 0;
+  mgr.answerPromptMemo(e.id, "내 메모");
+  const sk = runner.calls.filter((c) => c.cmd === "tmux" && c.args[0] === "send-keys");
+  expect(sk.filter((c) => c.args.includes("Down")).length).toBe(1); // 옵션A → Type something
+  expect(sk.some((c) => c.args.includes("-l") && c.args.includes("내 메모"))).toBe(true);
+  expect(sk.filter((c) => c.args.includes("Enter")).length).toBe(2); // 입력창 열기 + 제출
+});
+
+test("answerPromptMemo: 409 when there's no 'Type something' option", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = ["질문?", "❯ 1. A", "  2. B", "Enter to select · Esc to cancel"].join("\n");
+  expect(() => mgr.answerPromptMemo(e.id, "x")).toThrow(HttpError);
+});
+
 test("sampleActivity: no menu → no prompt", () => {
   const { mgr, runner } = setup();
   const e = mgr.launch("myapp");

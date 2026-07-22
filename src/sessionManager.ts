@@ -759,6 +759,46 @@ export class SessionManager {
     return this.promptMap[id] ?? null;
   }
 
+  // Answer an on-screen AskUserQuestion with free text: navigate to its "Type something"
+  // option, open the input, type the memo, submit. Lets the panel do memo answers that
+  // otherwise only work at the CLI.
+  answerPromptMemo(id: string, text: string): { ok: boolean } {
+    const s = this.o.store.getSession(id);
+    if (!s) throw new HttpError(404, `no session ${id}`);
+    let pane = "";
+    try {
+      pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
+    } catch {
+      /* fall through */
+    }
+    const p = this.parsePrompt(pane);
+    if (!p) throw new HttpError(409, "지금 이 세션에 선택 프롬프트가 없어요.");
+    const idx = p.options.findIndex((o) => /type something/i.test(o.label));
+    if (idx < 0) throw new HttpError(409, "이 질문엔 자유입력(Type something) 옵션이 없어요.");
+    const clean = text.replace(/\r?\n/g, " ").trim();
+    if (!clean) throw new HttpError(400, "메모가 비어 있어요.");
+    const send = (...keys: string[]) => this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, ...keys]);
+    const nap = (sec: string) => {
+      try {
+        this.o.runner.run("sleep", [sec]);
+      } catch {
+        /* ignore */
+      }
+    };
+    const delta = idx - p.selectedIdx;
+    const key = delta >= 0 ? "Down" : "Up";
+    for (let i = 0; i < Math.abs(delta); i++) {
+      send(key);
+      nap("0.12");
+    }
+    send("Enter"); // select "Type something" → opens the text input
+    nap("0.4");
+    send("-l", clean); // type the memo
+    nap("0.2");
+    send("Enter"); // submit
+    return { ok: true };
+  }
+
   // Answer an on-screen menu from the panel: re-read the pane, then navigate the cursor
   // from where it currently sits to the chosen option and press Enter. Navigating (vs
   // typing a number) works whether or not the menu accepts number shortcuts.
