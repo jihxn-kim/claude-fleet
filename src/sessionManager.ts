@@ -260,6 +260,7 @@ export class SessionManager {
     if (!s) throw new HttpError(404, `no session ${id}`);
     if (s.status === "running") throw new HttpError(409, `session ${id} already running`);
     if (this.o.store.runningCount(s.project) >= 2) throw new HttpError(409, `max 2 running for ${s.project}`);
+    this.killTmux(s.tmuxName); // clear a stale shell-dropped session → exactly one fresh
     this.spawnTmux(s.tmuxName, s.projectPath, this.claudeArgv("--resume", id, this.activeSessionIds().has(id)));
     s.status = "running";
     s.startedAt = this.now();
@@ -489,9 +490,37 @@ export class SessionManager {
   reconcile(): void {
     const live = new Set(this.liveFleetSessions());
     for (const s of this.o.store.listSessions()) {
-      if (s.status === "running" && !live.has(s.tmuxName)) {
+      if (s.status !== "running") continue;
+      // tmux gone, OR tmux alive but claude exited to a shell → mark stopped so the panel
+      // shows it as ⚫ inactive with a reactivate button (instead of a dead "running").
+      if (!live.has(s.tmuxName) || this.paneIsShell(s.tmuxName)) {
         this.o.store.setStatus(s.id, "stopped");
       }
+    }
+  }
+
+  // A tmux session can outlive its claude — e.g. an adopted session (user-created tmux
+  // running claude) whose claude exits drops back to a shell while the tmux lives on.
+  // Detect that via the pane's foreground command so reconcile doesn't report a dead
+  // shell as "running". (Running a Bash tool keeps claude as the foreground command, so
+  // this doesn't false-positive mid-work.)
+  private paneIsShell(tmuxName: string): boolean {
+    try {
+      const cmd = this.o.runner.run("tmux", ["display-message", "-p", "-t", tmuxName, "#{pane_current_command}"]).trim();
+      return /^-?(zsh|bash|fish|sh|dash|tcsh|ksh|csh)$/i.test(cmd);
+    } catch {
+      return false;
+    }
+  }
+
+  // Best-effort kill: clears a stale tmux session before we spawn a fresh one, so
+  // reactivating a shell-dropped session reuses the one name instead of hitting a
+  // "duplicate session" error. A no-op (ignored error) if nothing is there.
+  private killTmux(tmuxName: string): void {
+    try {
+      this.o.runner.run("tmux", ["kill-session", "-t", tmuxName]);
+    } catch {
+      /* not running — fine */
     }
   }
 
@@ -526,6 +555,7 @@ export class SessionManager {
     const file = join(this.o.claudeProjectsDir, encodeProjectDir(proj.path), `${id}.jsonl`);
     if (!existsSync(file)) throw new HttpError(404, `no session ${id} in project ${project}`);
     const tmuxName = `fleet__${slug(project)}__${id.slice(0, 6)}`;
+    this.killTmux(tmuxName); // clear a stale session with this name → exactly one fresh
     this.spawnTmux(tmuxName, proj.path, this.claudeArgv("--resume", id, this.activeSessionIds().has(id)));
     const entry: SessionEntry = {
       id, project, projectPath: proj.path, tmuxName,

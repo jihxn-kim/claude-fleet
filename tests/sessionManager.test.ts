@@ -9,6 +9,7 @@ class FakeRunner implements CommandRunner {
   calls: Array<{ cmd: string; args: string[] }> = [];
   listOutput = "";
   paneContent = ""; // returned for `tmux capture-pane`
+  paneCommand = ""; // returned for `tmux display-message ... #{pane_current_command}`
   failKeys = new Set<string>();
   run(cmd: string, args: string[]): string {
     this.calls.push({ cmd, args });
@@ -16,6 +17,7 @@ class FakeRunner implements CommandRunner {
     if (this.failKeys.has(sub)) throw new Error(`fake fail ${sub}`);
     if (cmd === "tmux" && sub === "list-sessions") return this.listOutput;
     if (cmd === "tmux" && sub === "capture-pane") return this.paneContent;
+    if (cmd === "tmux" && sub === "display-message") return this.paneCommand;
     return "";
   }
 }
@@ -260,6 +262,36 @@ test("answerPrompt: no menu on screen → 409", () => {
   const e = mgr.launch("myapp");
   runner.paneContent = "no menu here";
   expect(() => mgr.answerPrompt(e.id, 1)).toThrow(HttpError);
+});
+
+test("reconcile: tmux alive but pane dropped to a shell → marked stopped", () => {
+  const { mgr, store, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.listOutput = `${e.tmuxName}\n`; // tmux session still alive
+  runner.paneCommand = "zsh"; // ...but claude exited → shell
+  mgr.reconcile();
+  expect(store.getSession(e.id)!.status).toBe("stopped");
+});
+
+test("reconcile: tmux alive and claude running (non-shell) → stays running", () => {
+  const { mgr, store, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.listOutput = `${e.tmuxName}\n`;
+  runner.paneCommand = "2.1.217"; // the claude binary is the foreground command
+  mgr.reconcile();
+  expect(store.getSession(e.id)!.status).toBe("running");
+});
+
+test("resume: kills any stale tmux session before spawning a fresh one (no duplicate)", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  mgr.close(e.id); // now stopped
+  runner.calls.length = 0;
+  mgr.resume(e.id);
+  const kill = runner.calls.findIndex((c) => c.cmd === "tmux" && c.args[0] === "kill-session" && c.args.includes(e.tmuxName));
+  const spawn = runner.calls.findIndex((c) => c.cmd === "tmux" && c.args[0] === "new-session");
+  expect(kill).toBeGreaterThanOrEqual(0); // stale session cleared
+  expect(spawn).toBeGreaterThan(kill); // ...before the fresh spawn
 });
 
 test("launch unknown project throws HttpError 400", () => {
