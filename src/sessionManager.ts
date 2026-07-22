@@ -687,7 +687,13 @@ export class SessionManager {
   // mention "interrupt" can't cause a false positive. Works for detached sessions and
   // survives --fork-session id changes (it reads the screen, not a session file).
   private paneShowsBusy(pane: string): boolean {
-    return /esc to interrupt/i.test(pane.split("\n").slice(-8).join("\n"));
+    const lines = pane.split("\n");
+    // main is generating / running a tool
+    if (/esc to interrupt/i.test(lines.slice(-8).join("\n"))) return true;
+    // blocked waiting on a background subagent (Task) — still working, just no
+    // "esc to interrupt" line. The agent manager list can push this up a few rows.
+    if (/Waiting for \d+ background agents? to finish/i.test(lines.slice(-16).join("\n"))) return true;
+    return false;
   }
 
   // While remote-control is connected, claude shows a persistent "/rc" affordance in the

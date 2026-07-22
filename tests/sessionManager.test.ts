@@ -71,6 +71,20 @@ test("sampleActivity: busy when the status line shows 'esc to interrupt', else i
   expect(mgr.sessionActivity()[e.id]).toBe("idle");
 });
 
+test("sampleActivity: busy while waiting on a background subagent (no 'esc to interrupt')", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = [
+    "⏺ Agent(Capacity Task 5)",
+    "  ⎿ Backgrounded agent (↓ to manage)",
+    "✻ Waiting for 1 background agent to finish",
+    "❯ ",
+    "  auto mode on (shift+tab to cycle) · 5 agents",
+  ].join("\n");
+  mgr.sampleActivity();
+  expect(mgr.sessionActivity()[e.id]).toBe("busy");
+});
+
 test("sessionActivity: only running sessions get a value", () => {
   const { mgr } = setup();
   const e = mgr.launch("myapp");
