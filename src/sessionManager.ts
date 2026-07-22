@@ -215,6 +215,10 @@ export class SessionManager {
   //  - extended-keys on + the extkeys feature → Shift+Enter reaches claude as a
   //    real newline instead of collapsing to a plain Enter (submit).
   //  - the RGB feature → 24-bit color themes render correctly.
+  //  - drag-select disarmed in copy mode → a stray horizontal wiggle while
+  //    wheel-scrolling no longer hijacks the scroll into a text selection. Wheel
+  //    scroll bindings are untouched. To select text deliberately, hold ⌥ Option
+  //    and drag (iTerm2 does a native selection, bypassing tmux mouse reporting).
   // Server-level, so this only needs to run once per tmux server.
   private serverOptsEnsured = false;
   private ensureServerOpts(): void {
@@ -231,6 +235,14 @@ export class SessionManager {
       for (const feat of ["RGB", "extkeys"]) {
         if (!features.includes(feat)) {
           this.o.runner.run("tmux", ["set-option", "-sa", "terminal-features", `xterm*:${feat}`]);
+        }
+      }
+      for (const table of ["copy-mode", "copy-mode-vi"]) {
+        this.o.runner.run("tmux", ["bind-key", "-T", table, "MouseDrag1Pane", "select-pane"]);
+        try {
+          this.o.runner.run("tmux", ["unbind-key", "-T", table, "MouseDragEnd1Pane"]);
+        } catch {
+          /* already unbound */
         }
       }
     } catch {
