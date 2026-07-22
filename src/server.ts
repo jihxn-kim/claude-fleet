@@ -51,4 +51,12 @@ server.listen(CONFIG.port, () => {
       console.error("reconcile error:", e);
     }
   }, 5000);
+  // Sample session activity (busy/idle) on a fixed cadence, independent of panel polls.
+  setInterval(() => {
+    try {
+      sessions.sampleActivity();
+    } catch (e) {
+      console.error("sampleActivity error:", e);
+    }
+  }, 2000);
 });

@@ -498,31 +498,45 @@ export class SessionManager {
     return new Set(this.agents().map((a) => a.sessionId ?? a.id ?? "").filter(Boolean));
   }
 
-  // id → live activity ("busy" | "idle"). Uses the tmux session's own last-activity
-  // time (pane output), so it stays correct even when the running claude forked to a
-  // new session id (--fork-session) and writes to a different transcript file. A
-  // working claude keeps redrawing (spinner/elapsed counter), which refreshes
-  // session_activity; an idle one at the prompt does not.
-  sessionActivity(): Record<string, string> {
-    const BUSY_MS = 10_000;
-    const now = Date.now();
-    const m: Record<string, string> = {};
+  // Activity detection by screen diff: a working claude keeps redrawing its spinner
+  // (an elapsed-seconds counter that ticks every second), so its pane content changes
+  // between samples; an idle one at the prompt is static. This reads what's actually
+  // on screen, works for detached sessions (tmux updates the pane buffer regardless of
+  // attach), survives --fork-session id changes, and doesn't depend on any UI wording.
+  private paneSig = new Map<string, string>(); // id → last sampled bottom-of-pane
+  private activityMap: Record<string, string> = {}; // id → "busy" | "idle"
+
+  // Sample every running session once. Called on a fixed interval by the server, so
+  // detection cadence is independent of how many panels are polling.
+  sampleActivity(): void {
+    const next: Record<string, string> = {};
+    const seen = new Set<string>();
     for (const s of this.o.store.listSessions()) {
       if (s.status !== "running") continue;
-      let busy = false;
+      seen.add(s.id);
+      let sig: string | null = null;
       try {
-        const raw = this.o.runner.run("tmux", ["display-message", "-p", "-t", s.tmuxName, "#{session_activity}"]).trim();
-        const ts = Number(raw);
-        if (ts > 0) {
-          const ms = ts < 1e12 ? ts * 1000 : ts; // tmux reports seconds; guard if ms
-          busy = now - ms < BUSY_MS;
-        }
+        const pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
+        sig = pane.split("\n").slice(-12).join("\n");
       } catch {
-        /* tmux session gone → treat as idle */
+        /* tmux session gone → idle, forget its signature */
       }
-      m[s.id] = busy ? "busy" : "idle";
+      if (sig === null) {
+        this.paneSig.delete(s.id);
+        next[s.id] = "idle";
+        continue;
+      }
+      const prev = this.paneSig.get(s.id);
+      next[s.id] = prev !== undefined && sig !== prev ? "busy" : "idle";
+      this.paneSig.set(s.id, sig);
     }
-    return m;
+    for (const id of [...this.paneSig.keys()]) if (!seen.has(id)) this.paneSig.delete(id);
+    this.activityMap = next;
+  }
+
+  // id → live activity, from the most recent sample (cheap; no shelling out here).
+  sessionActivity(): Record<string, string> {
+    return this.activityMap;
   }
 
   private claudeArgv(resumeFlag: string, id: string, mcpPath: string, fork = false): string[] {

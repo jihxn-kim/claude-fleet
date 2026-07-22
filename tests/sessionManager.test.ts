@@ -8,14 +8,14 @@ import { SessionManager, HttpError, type CommandRunner } from "../src/sessionMan
 class FakeRunner implements CommandRunner {
   calls: Array<{ cmd: string; args: string[] }> = [];
   listOutput = "";
-  activityTs = ""; // returned for `tmux display-message ... #{session_activity}`
+  paneContent = ""; // returned for `tmux capture-pane`
   failKeys = new Set<string>();
   run(cmd: string, args: string[]): string {
     this.calls.push({ cmd, args });
     const sub = args[0];
     if (this.failKeys.has(sub)) throw new Error(`fake fail ${sub}`);
     if (cmd === "tmux" && sub === "list-sessions") return this.listOutput;
-    if (cmd === "tmux" && sub === "display-message") return this.activityTs;
+    if (cmd === "tmux" && sub === "capture-pane") return this.paneContent;
     return "";
   }
 }
@@ -59,12 +59,16 @@ test("launch: writes mcp config, runs tmux new-session with claude --session-id,
   expect(store.getSession(e.id)!.status).toBe("running");
 });
 
-test("sessionActivity: busy when tmux session_activity is recent, idle when stale", () => {
+test("sampleActivity: busy when the screen changes between samples, idle when static", () => {
   const { mgr, runner } = setup();
   const e = mgr.launch("myapp"); // running session
-  runner.activityTs = String(Math.floor(Date.now() / 1000)); // now (epoch seconds)
+  runner.paneContent = "conversation\n(3s · esc to interrupt)";
+  mgr.sampleActivity(); // first sample → idle (no prior to diff against)
+  expect(mgr.sessionActivity()[e.id]).toBe("idle");
+  runner.paneContent = "conversation\n(5s · esc to interrupt)"; // spinner counter advanced
+  mgr.sampleActivity();
   expect(mgr.sessionActivity()[e.id]).toBe("busy");
-  runner.activityTs = String(Math.floor(Date.now() / 1000) - 60); // 60s ago
+  mgr.sampleActivity(); // unchanged screen → idle
   expect(mgr.sessionActivity()[e.id]).toBe("idle");
 });
 
@@ -72,6 +76,7 @@ test("sessionActivity: only running sessions get a value", () => {
   const { mgr } = setup();
   const e = mgr.launch("myapp");
   mgr.close(e.id); // now stopped
+  mgr.sampleActivity();
   expect(mgr.sessionActivity()[e.id]).toBeUndefined();
 });
 
