@@ -2,14 +2,12 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { DecisionStore } from "./decisionStore.js";
 import { SessionStore } from "./sessionStore.js";
 import { SessionManager, type CommandRunner } from "./sessionManager.js";
 import { createServer } from "./webServer.js";
 import { CONFIG } from "./config.js";
 
 const repoRoot = process.cwd();
-const decisions = new DecisionStore(CONFIG.historyPath);
 const sessionStore = new SessionStore(
   join(CONFIG.dataDir, "sessions.json"),
   join(CONFIG.dataDir, "projects.json"),
@@ -31,7 +29,7 @@ const sessions = new SessionManager({
 });
 
 const publicDir = join(repoRoot, "public");
-const server = createServer(decisions, { panelToken: CONFIG.panelToken, publicDir, sessions });
+const server = createServer({ panelToken: CONFIG.panelToken, publicDir, sessions });
 
 server.listen(CONFIG.port, () => {
   console.log(`fleet orchestrator on http://127.0.0.1:${CONFIG.port}`);

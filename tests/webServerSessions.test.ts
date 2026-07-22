@@ -3,7 +3,6 @@ import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
-import { DecisionStore } from "../src/decisionStore.js";
 import { SessionStore } from "../src/sessionStore.js";
 import { SessionManager, type CommandRunner } from "../src/sessionManager.js";
 import { createServer } from "../src/webServer.js";
@@ -20,7 +19,6 @@ class FakeRunner implements CommandRunner {
 
 function boot() {
   const dir = mkdtempSync(join(tmpdir(), "fleet-web2-"));
-  const decisions = new DecisionStore(join(dir, "h.jsonl"));
   const store = new SessionStore(join(dir, "sessions.json"), join(dir, "projects.json"));
   store.addProject("myapp", "/p/myapp");
   const runner = new FakeRunner();
@@ -30,11 +28,11 @@ function boot() {
     mcpDir: join(dir, "mcp"), ruleText: "RULE", claudeProjectsDir: join(dir, "claude-projects"),
     genId: () => `uuid${++seq}0000`,
   });
-  const server = createServer(decisions, { panelToken: TOKEN, publicDir: join(dir, "public"), sessions });
-  return new Promise<{ base: string; dir: string; decisions: DecisionStore; sessions: SessionManager; close: () => void }>((res) => {
+  const server = createServer({ panelToken: TOKEN, publicDir: join(dir, "public"), sessions });
+  return new Promise<{ base: string; dir: string; sessions: SessionManager; close: () => void }>((res) => {
     server.listen(0, "127.0.0.1", () => {
       const { port } = server.address() as AddressInfo;
-      res({ base: `http://127.0.0.1:${port}`, dir, decisions, sessions, close: () => server.close() });
+      res({ base: `http://127.0.0.1:${port}`, dir, sessions, close: () => server.close() });
     });
   });
 }
@@ -57,7 +55,7 @@ test("POST /api/sessions launches; 3rd is 409; GET lists them", async () => {
   expect(third.status).toBe(409);
   const list = await (await fetch(q(base, "/api/sessions"))).json();
   expect(list).toHaveLength(2);
-  expect(list[0]).toHaveProperty("notice"); // null when none
+  expect(list[0]).toHaveProperty("activity"); // enriched session fields present
   close();
 });
 
@@ -78,25 +76,14 @@ test("close then resume via endpoints", async () => {
   close();
 });
 
-test("GET /api/decisions enriches with session {project,tmuxName}; /internal/notify sets+clears notice", async () => {
-  const { base, decisions, sessions, close } = await boot();
+test("GET /api/sessions enriches with activity/terminalOpen/remoteActive/prompt", async () => {
+  const { base, close } = await boot();
   const a = await (await fetch(q(base, "/api/sessions"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: "myapp" }) })).json();
-  // a stuck notice
-  await fetch(`${base}/internal/notify`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sessionId: a.id, message: "waiting on perm" }) });
-  let list = await (await fetch(q(base, "/api/sessions"))).json();
-  expect(list.find((s: any) => s.id === a.id).notice.message).toBe("waiting on perm");
-  // a decision from that session (fire, don't await)
-  fetch(`${base}/internal/decisions`, { method: "POST", headers: { "content-type": "application/json", "x-fleet-session": a.id }, body: JSON.stringify({ title: "t", why_now: "w", payoff: "p", tradeoff: "tr", options: [{ n: 1, label: "x" }], allow_freetext: true }) }).catch(() => {});
-  let pend: any[] = [];
-  for (let i = 0; i < 50 && pend.length === 0; i++) { pend = await (await fetch(q(base, "/api/decisions"))).json(); if (!pend.length) await new Promise((r) => setTimeout(r, 10)); }
-  expect(pend[0].session).toEqual({ project: "myapp", projectPath: "/p/myapp", tmuxName: a.tmuxName });
-  // creating the decision cleared the stuck notice
-  list = await (await fetch(q(base, "/api/sessions"))).json();
-  expect(list.find((s: any) => s.id === a.id).notice).toBeNull();
-  // clean up the held request
-  decisions.answer(pend[0].id, { choice: 1 });
+  const list = await (await fetch(q(base, "/api/sessions"))).json();
+  const s = list.find((x: any) => x.id === a.id);
+  expect(s).toBeTruthy();
+  for (const k of ["activity", "terminalOpen", "remoteActive", "prompt"]) expect(k in s).toBe(true);
   close();
-  void sessions;
 });
 
 function seedSession(dir: string, projectPath: string, id: string, firstUser: string): void {

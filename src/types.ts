@@ -1,33 +1,3 @@
-export interface DecisionOption {
-  n: number;
-  label: string;
-  action_preview?: string;
-}
-
-export interface DecisionRequest {
-  title: string;
-  why_now: string;
-  payoff: string;
-  tradeoff: string;
-  context?: string;
-  options: DecisionOption[];
-  allow_freetext: boolean;
-  multi_select?: boolean; // true면 옵션을 여러 개 동시에 고를 수 있음
-}
-
-export interface DecisionAnswer {
-  choice?: number; // 단일 선택
-  choices?: number[]; // 다중 선택 (multi_select 문항)
-  memo?: string;
-}
-
-export interface PendingDecisionView {
-  id: string;
-  sessionToken: string;
-  request: DecisionRequest;
-  createdAt: string;
-}
-
 // A native on-screen selection menu detected in a session (permission prompt,
 // AskUserQuestion, plan approval, yes/no, …) — mirrored to the panel.
 export interface PromptOption {

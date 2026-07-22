@@ -3,5 +3,5 @@ import { CONFIG } from "../src/config.js";
 
 test("config has defaults", () => {
   expect(CONFIG.port).toBe(4179);
-  expect(CONFIG.historyPath).toContain("decisions.jsonl");
+  expect(CONFIG.dataDir).toContain("data");
 });

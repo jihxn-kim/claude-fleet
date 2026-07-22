@@ -6,5 +6,4 @@ export const CONFIG = {
   port: Number(process.env.FLEET_PORT ?? 4179),
   panelToken: process.env.FLEET_PANEL_TOKEN ?? "change-me-please",
   dataDir,
-  historyPath: join(dataDir, "decisions.jsonl"),
 };

@@ -117,7 +117,6 @@
 <div id="tab-main" class="panel">
   <div class="sec-h" id="dec-h" hidden>⚡ 결정 필요</div>
   <div id="prompts"></div>
-  <div id="decisions"></div>
   <div class="wrap">
     <div class="board">
       <div class="col off"><div class="col-head">⚫ 비활성화 <span class="n" id="n-off">0</span></div><div id="col-off"></div></div>
@@ -147,7 +146,6 @@
   const q = (s) => `${s}${s.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
   let showAll = false;
   let allCache = [];
-  const answered = new Set(); // just-answered decision ids (avoid re-adding before server drops them)
 
   // 라인 아이콘 (이모지 대신)
   const IC = {
@@ -165,31 +163,9 @@
     document.getElementById("tab-manage").hidden = name !== "manage";
   }));
 
-  // ---- 결정 ----
-  async function poll() {
-    try {
-      const list = await (await fetch(q("/api/decisions"))).json();
-      renderDecisions(Array.isArray(list) ? list : []);
-    } catch (e) { /* 네트워크 끊김은 다음 폴에서 복구 */ }
-    setTimeout(poll, 1500);
-  }
-  function renderDecisions(list) {
-    const wrap = document.getElementById("decisions");
-    const ids = new Set(list.map((d) => d.id));
-    for (const id of [...answered]) if (!ids.has(id)) answered.delete(id); // 서버가 실제로 없애면 해제
-    const shown = list.filter((d) => !answered.has(d.id));
-    // 사라진 카드 제거
-    [...wrap.children].forEach((el) => { if (!ids.has(el.dataset.id) || answered.has(el.dataset.id)) el.remove(); });
-    // 새 카드 추가 (기존 카드는 입력 유지 위해 건드리지 않음)
-    for (const item of shown) {
-      if ([...wrap.children].some((el) => el.dataset.id === item.id)) continue;
-      wrap.appendChild(buildDecisionCard(item));
-    }
-    updateDecHeader();
-  }
-  // "⚡ 결정 필요" 헤더/배지 = MCP 결정 + 화면 프롬프트 합산
+  // "⚡ 결정 필요" 헤더/배지 = 화면에 뜬 프롬프트 개수
   function updateDecHeader() {
-    const total = document.getElementById("decisions").children.length + document.getElementById("prompts").children.length;
+    const total = document.getElementById("prompts").children.length;
     document.getElementById("dec-h").hidden = total === 0;
     const badge = document.getElementById("pcount");
     badge.textContent = total ? String(total) : "";
@@ -266,55 +242,6 @@
     } catch (e) { if (btn) btn.disabled = false; }
     pollSessions();
   }
-  function buildDecisionCard(item) {
-    const r = item.request;
-    const multi = !!r.multi_select;
-    const s = item.session;
-    const who = s ? (s.label ? esc(s.label) : esc(s.project + " · " + s.tmuxName)) : "";
-    const opts = r.options.map((o) =>
-      `<button class="opt${multi ? " mopt" : ""}" data-n="${Number(o.n)}">${Number(o.n)}<span class="lab">${esc(o.label)}</span></button>`).join("");
-    const el = document.createElement("div");
-    el.className = "card";
-    el.dataset.id = item.id;
-    el.innerHTML = `
-      ${s ? `<div class="dhead"><span class="tag">▸</span> ${who}</div><div class="dpath">${esc(s.projectPath || "")}</div>` : ""}
-      <p class="title">${esc(r.title)}</p>
-      <div class="sec-label">지금 왜?</div><p class="sec">${esc(r.why_now)}</p>
-      <div class="sec-label">THE PAYOFF</div><p class="sec payoff">${esc(r.payoff)}</p>
-      <div class="sec-label">트레이드오프</div><p class="sec">${esc(r.tradeoff)}</p>
-      ${r.context ? `<div class="sec-label">알아두면 좋은 맥락</div><p class="sec">${esc(r.context)}</p>` : ""}
-      ${multi ? '<div class="multihint">✅ 여러 개 선택 가능 — 고르고 "선택 완료"</div>' : ""}
-      <div class="opts">${opts}</div>
-      ${multi ? '<button class="send msend">선택 완료</button>' : ""}
-      ${r.allow_freetext ? '<textarea class="memo" placeholder="예: 2번으로 가자. 대신 배포 전 한 번 더 확인해줘."></textarea><button class="send memosend">메모로 답하기</button>' : ""}`;
-    if (multi) {
-      const msend = el.querySelector(".msend");
-      const refresh = () => { const n = el.querySelectorAll(".mopt.sel").length; msend.textContent = n ? `선택 완료 (${n}개)` : "선택 완료"; };
-      el.querySelectorAll(".mopt").forEach((b) => b.addEventListener("click", () => { b.classList.toggle("sel"); refresh(); }));
-      msend.addEventListener("click", () => {
-        const choices = [...el.querySelectorAll(".mopt.sel")].map((x) => Number(x.dataset.n));
-        if (!choices.length) return;
-        const memoEl = el.querySelector(".memo");
-        const memo = memoEl ? memoEl.value.trim() : "";
-        answer(item.id, memo ? { choices, memo } : { choices });
-      });
-    } else {
-      el.querySelectorAll(".opt").forEach((b) => b.addEventListener("click", () => answer(item.id, { choice: Number(b.dataset.n) })));
-    }
-    const memosend = el.querySelector(".memosend");
-    if (memosend) memosend.addEventListener("click", () => answer(item.id, { memo: el.querySelector(".memo").value.trim() }));
-    return el;
-  }
-  async function answer(id, body) {
-    answered.add(id);
-    const wrap = document.getElementById("decisions");
-    [...wrap.children].forEach((el) => { if (el.dataset.id === id) el.remove(); });
-    updateDecHeader();
-    try {
-      await fetch(q(`/api/decisions/${id}/answer`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    } catch (e) { /* 다음 폴에서 정합성 회복 */ }
-  }
-
   // ---- 세션 보드 ----
   async function pollSessions() {
     try {
@@ -331,7 +258,6 @@
   }
   function sessionCard(s) {
     const running = s.status === "running";
-    const badge = s.notice ? `<span class="badge" title="${esc(s.notice.message)}">⚠️</span>` : "";
     const rc = running && s.remoteActive ? `<span class="rc" title="원격제어 연결됨 (Claude 앱)">${IC.remote}</span>` : "";
     const lbl = esc(s.label || s.tmuxName);
     const nameEl = running
@@ -348,14 +274,14 @@
       btns = `<button class="go" data-act="resume" data-id="${esc(s.id)}">▶ 활성화</button>`;
     }
     return `<div class="scard">
-        <div class="top"><span class="dot">${running ? "🟢" : "⚫"}</span>${nameEl}${rc}${badge}<button class="rename" data-act="rename" data-id="${esc(s.id)}" data-label="${esc(s.label || "")}" title="이름 변경">${IC.edit}</button><button class="del" data-act="terminate" data-id="${esc(s.id)}" data-label="${lbl}" title="프로젝트에서 삭제 (로컬 기록은 남음)">✕</button></div>
+        <div class="top"><span class="dot">${running ? "🟢" : "⚫"}</span>${nameEl}${rc}<button class="rename" data-act="rename" data-id="${esc(s.id)}" data-label="${esc(s.label || "")}" title="이름 변경">${IC.edit}</button><button class="del" data-act="terminate" data-id="${esc(s.id)}" data-label="${lbl}" title="프로젝트에서 삭제 (로컬 기록은 남음)">✕</button></div>
         <div class="pj">${esc(s.project)}</div>
         <div class="btns">${btns}</div>
       </div>`;
   }
   function renderBoard(sessions) {
     const running = sessions.filter((s) => s.status === "running");
-    const needsYou = (s) => s.prompt || s.waitingDecision; // 화면 프롬프트 or MCP 결정 대기
+    const needsYou = (s) => s.prompt; // 화면에 선택메뉴 떠서 입력 대기중
     const waiting = running.filter(needsYou);
     const busy = running.filter((s) => !needsYou(s) && s.activity === "busy");
     const idle = running.filter((s) => !needsYou(s) && s.activity !== "busy");
@@ -482,7 +408,6 @@
     } catch (e) { /* ignore */ }
   }
 
-  poll();
   pollSessions();
   renderAll();
   pollAll();

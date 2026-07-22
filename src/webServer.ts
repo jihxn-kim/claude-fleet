@@ -1,10 +1,8 @@
 import { createServer as httpCreate, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, normalize } from "node:path";
-import type { DecisionStore } from "./decisionStore.js";
 import type { SessionManager } from "./sessionManager.js";
 import { HttpError } from "./sessionManager.js";
-import type { DecisionRequest, DecisionAnswer } from "./types.js";
 
 function send(res: ServerResponse, status: number, body: unknown, type = "application/json"): void {
   const payload = type === "application/json" ? JSON.stringify(body) : String(body);
@@ -19,11 +17,6 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   return raw ? JSON.parse(raw) : {};
 }
 
-function isLoopback(req: IncomingMessage): boolean {
-  const a = req.socket.remoteAddress ?? "";
-  return a === "127.0.0.1" || a === "::1" || a === "::ffff:127.0.0.1";
-}
-
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript",
@@ -31,32 +24,19 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 export function createServer(
-  store: DecisionStore,
   opts: { panelToken: string; publicDir: string; sessions?: SessionManager },
 ): Server {
   const sessions = opts.sessions;
-  const notices = new Map<string, { message: string; at: string }>();
 
-  function enrichDecisions(): unknown[] {
-    const list = store.list();
-    if (!sessions) return list;
-    return list.map((d) => {
-      const s = sessions.store.getSession(d.sessionToken);
-      return { ...d, session: s ? { project: s.project, projectPath: s.projectPath, tmuxName: s.tmuxName, label: s.label } : null };
-    });
-  }
   function enrichSessions(): unknown[] {
     if (!sessions) return [];
     const activity = sessions.sessionActivity();
-    const pendingDecision = new Set(store.list().map((d) => d.sessionToken));
     return sessions.store.listSessions().map((s) => ({
       ...s,
-      notice: notices.get(s.id) ?? null,
       activity: activity[s.id] ?? null,
       terminalOpen: sessions.terminalOpen(s.id),
       remoteActive: sessions.remoteActive(s.id),
       prompt: sessions.sessionPrompt(s.id),
-      waitingDecision: pendingDecision.has(s.id), // has a pending MCP request_decision
     }));
   }
   function sendHttpError(res: ServerResponse, err: unknown): void {
@@ -70,40 +50,9 @@ export function createServer(
       const path = url.pathname;
       const method = req.method ?? "GET";
 
-      if (path === "/internal/decisions" && method === "POST") {
-        if (!isLoopback(req)) return send(res, 403, { error: "loopback only" });
-        const sessionToken = String(req.headers["x-fleet-session"] ?? "session-1");
-        const request = (await readJson(req)) as DecisionRequest;
-        const { id, answer } = store.create(sessionToken, request);
-        notices.delete(sessionToken); // session is actively asking → not "stuck"
-        res.on("close", () => store.abort(id));
-        try {
-          const result = await answer;
-          if (!res.writableEnded && !res.destroyed) return send(res, 200, result);
-          return;
-        } catch {
-          return;
-        }
-      }
-
-      if (path === "/internal/notify" && method === "POST") {
-        if (!isLoopback(req)) return send(res, 403, { error: "loopback only" });
-        const body = (await readJson(req)) as { sessionId: string; message: string };
-        notices.set(body.sessionId, { message: body.message, at: new Date().toISOString() });
-        return send(res, 200, { ok: true });
-      }
-
       if (path.startsWith("/api/")) {
         const token = url.searchParams.get("token") ?? req.headers["x-fleet-token"];
         if (token !== opts.panelToken) return send(res, 401, { error: "bad token" });
-
-        if (path === "/api/decisions" && method === "GET") return send(res, 200, enrichDecisions());
-        const am = path.match(/^\/api\/decisions\/([^/]+)\/answer$/);
-        if (am && method === "POST") {
-          const ans = (await readJson(req)) as DecisionAnswer;
-          const ok = store.answer(am[1], ans);
-          return send(res, ok ? 200 : 404, { ok });
-        }
 
         if (path === "/api/projects" && method === "GET") return send(res, 200, sessions?.store.listProjects() ?? []);
         if (path === "/api/projects" && method === "POST") {
