@@ -124,7 +124,7 @@ test("sampleActivity: mirrors an on-screen selection menu as a prompt", () => {
   mgr.sampleActivity();
   const p = mgr.sessionPrompt(e.id)!;
   expect(p).not.toBeNull();
-  expect(p.title).toBe("무슨 도구를 쓸까?");
+  expect(p.context).toContain("무슨 도구를 쓸까?");
   expect(p.options).toEqual([
     { n: 1, label: "첫번째 옵션" },
     { n: 2, label: "두번째 옵션" },
@@ -148,7 +148,8 @@ test("sampleActivity: yes/no permission prompt — 'Do you want to proceed?' is 
   const p = mgr.sessionPrompt(e.id)!;
   expect(p).not.toBeNull();
   expect(p.options).toEqual([{ n: 1, label: "Yes" }, { n: 2, label: "No" }]);
-  expect(p.title).toContain("Do you want to proceed?");
+  expect(p.context).toContain("Do you want to proceed?");
+  expect(p.context).toContain("Contains shell syntax");
 });
 
 test("sampleActivity: no menu → no prompt", () => {

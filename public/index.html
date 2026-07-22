@@ -21,6 +21,7 @@
   /* 결정 카드 */
   #decisions, #prompts { max-width: 640px; margin: 0 auto 14px; }
   #decisions:empty, #prompts:empty { margin: 0; }
+  .pctx { background: #0e1114; border: 1px solid #23272e; border-radius: 8px; padding: 10px; margin-top: 10px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: #c7ccd1; white-space: pre; overflow: auto; max-height: 220px; }
   .popts { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
   .popt { text-align: left; border: 0; border-radius: 10px; background: #23272e; color: #e8eaed; padding: 12px 14px; font: inherit; font-size: 14px; cursor: pointer; line-height: 1.35; }
   .popt:hover { background: #2b3038; }
@@ -191,10 +192,11 @@
       const who = esc(s.label || s.tmuxName);
       const opts = s.prompt.options.map((o) =>
         `<button class="popt" data-id="${esc(s.id)}" data-n="${Number(o.n)}"><b>${Number(o.n)}</b>${esc(o.label)}</button>`).join("");
+      const ctx = s.prompt.context ? `<pre class="pctx">${esc(s.prompt.context)}</pre>` : "";
       return `<div class="card prompt">
           <div class="dhead"><span class="tag">▸</span> ${who}</div>
           <div class="dpath">${esc(s.projectPath || s.project || "")}</div>
-          <p class="title">${esc(s.prompt.title || "선택이 필요해요")}</p>
+          ${ctx}
           <div class="popts">${opts}</div>
         </div>`;
     }).join("");

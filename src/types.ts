@@ -35,7 +35,7 @@ export interface PromptOption {
   label: string;
 }
 export interface SessionPrompt {
-  title: string;
+  context: string; // the block above the options: command box / question, verbatim
   options: PromptOption[];
 }
 

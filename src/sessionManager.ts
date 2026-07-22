@@ -635,14 +635,25 @@ export class SessionManager {
       options.push({ n: Number(m[2]), label: m[3].trim() });
     }
     if (options.length < 2) return null;
-    // title: up to 2 meaningful lines just above the options (question + any context)
-    const titleLines: string[] = [];
-    for (let i = firstOptLine - 1; i >= 0 && titleLines.length < 2; i--) {
-      if (/^\s*❯?\s*\d+\.\s/.test(tail[i])) continue; // skip other option lines
-      const t = tail[i].replace(/[─┈—│]/g, "").replace(/^\s*[☐☑◦•⏺]\s*/, "").trim();
-      if (t) titleLines.unshift(t);
+    // context = the block above the options, verbatim (the command box for a permission
+    // prompt, the question for AskUserQuestion, …). Its top is the box rule (a long ───
+    // line) if there's one within ~24 lines; otherwise just the few lines of question.
+    let topIdx = -1;
+    const floor = Math.max(0, firstOptLine - 24);
+    for (let i = firstOptLine - 1; i >= floor; i--) {
+      if (/^[\s─—]{20,}$/.test(tail[i])) {
+        topIdx = i + 1;
+        break;
+      }
     }
-    return { title: titleLines.join(" · "), options, selectedIdx: selectedIdx < 0 ? 0 : selectedIdx };
+    if (topIdx < 0) topIdx = Math.max(0, firstOptLine - 6);
+    const context = tail
+      .slice(topIdx, firstOptLine)
+      .map((l) => l.replace(/[│]/g, "").replace(/\s+$/, ""))
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    return { context, options, selectedIdx: selectedIdx < 0 ? 0 : selectedIdx };
   }
 
   // A session is "busy" only while claude is actively generating or running a tool —
@@ -689,7 +700,7 @@ export class SessionManager {
       next[s.id] = this.paneShowsBusy(pane) ? "busy" : "idle";
       remote[s.id] = this.paneShowsRemote(pane);
       const p = this.parsePrompt(pane);
-      prompt[s.id] = p ? { title: p.title, options: p.options } : null;
+      prompt[s.id] = p ? { context: p.context, options: p.options } : null;
       let clients = "";
       try {
         clients = this.o.runner.run("tmux", ["list-clients", "-t", s.tmuxName]).trim();
