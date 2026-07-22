@@ -1,8 +1,26 @@
 import { createServer as httpCreate, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import { join, normalize } from "node:path";
+import qrcode from "qrcode-generator";
 import type { SessionManager } from "./sessionManager.js";
 import { HttpError } from "./sessionManager.js";
+
+// The phone reaches the panel over Tailscale, so the QR must encode the Tailscale IP —
+// not localhost/the LAN IP. Tailscale hands each node an address in the CGNAT range
+// 100.64.0.0/10 (second octet 64–127) on a utun interface; read it straight off the
+// interface list. This is pure Node — no dependency on the `tailscale` CLI, which a
+// launchd process can't reliably exec.
+function tailscaleIp(): string | null {
+  for (const addrs of Object.values(networkInterfaces())) {
+    for (const a of addrs ?? []) {
+      if (a.family !== "IPv4" || a.internal) continue;
+      const [o1, o2] = a.address.split(".").map(Number);
+      if (o1 === 100 && o2 >= 64 && o2 <= 127) return a.address;
+    }
+  }
+  return null;
+}
 
 function send(res: ServerResponse, status: number, body: unknown, type = "application/json"): void {
   const payload = type === "application/json" ? JSON.stringify(body) : String(body);
@@ -24,9 +42,10 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 export function createServer(
-  opts: { panelToken: string; publicDir: string; sessions?: SessionManager },
+  opts: { panelToken: string; publicDir: string; sessions?: SessionManager; port?: number },
 ): Server {
   const sessions = opts.sessions;
+  const port = opts.port ?? 4179;
 
   function enrichSessions(): unknown[] {
     if (!sessions) return [];
@@ -54,6 +73,16 @@ export function createServer(
         const token = url.searchParams.get("token") ?? req.headers["x-fleet-token"];
         if (token !== opts.panelToken) return send(res, 401, { error: "bad token" });
 
+        if (path === "/api/panel-url" && method === "GET") {
+          const ip = tailscaleIp();
+          const host = ip ?? (req.headers.host?.split(":")[0] || "127.0.0.1");
+          const panelUrl = `http://${host}:${port}/?token=${opts.panelToken}`;
+          const qr = qrcode(0, "M");
+          qr.addData(panelUrl);
+          qr.make();
+          const svg = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+          return send(res, 200, { url: panelUrl, host, port, viaTailscale: !!ip, svg });
+        }
         if (path === "/api/projects" && method === "GET") return send(res, 200, sessions?.store.listProjects() ?? []);
         if (path === "/api/projects" && method === "POST") {
           if (!sessions) return send(res, 404, { error: "sessions disabled" });

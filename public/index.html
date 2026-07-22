@@ -106,6 +106,13 @@
   #settings { max-width: 640px; margin: 0 auto; }
   #settings select { background: #1e2228; color: #e8eaed; border: 1px solid #2b3038; border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; }
   #settings .setrow { margin-bottom: 8px; }
+  .qrcard { max-width: 640px; margin: 0 auto 18px; background: #16191d; border-radius: 12px; padding: 16px; text-align: center; }
+  .qrcard .lbl { font-size: 12px; color: #8a929b; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 12px; text-align: left; }
+  .qrbox { background: #fff; border-radius: 10px; padding: 12px; display: inline-block; line-height: 0; min-width: 120px; min-height: 40px; color: #16191d; font-size: 13px; }
+  .qrbox svg { width: 220px; height: 220px; display: block; }
+  .qrurl { margin-top: 10px; font-size: 12px; color: #8a929b; word-break: break-all; }
+  .qrhint { margin-top: 4px; font-size: 11px; color: #6b727a; }
+  .qrcopy { margin-top: 10px; border: 0; border-radius: 10px; background: #23272e; color: #e8eaed; padding: 8px 14px; font: inherit; font-size: 13px; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -129,6 +136,13 @@
 </div>
 
 <div id="tab-manage" class="panel" hidden>
+  <div class="qrcard" id="qrcard">
+    <div class="lbl">폰으로 접속</div>
+    <div class="qrbox" id="qrbox">불러오는 중…</div>
+    <div class="qrurl" id="qrurl"></div>
+    <div class="qrhint" id="qrhint"></div>
+    <button class="qrcopy" id="qrcopy" hidden>링크 복사</button>
+  </div>
   <div class="addproj" id="addproj">
     <div class="lbl">프로젝트 추가</div>
     <input id="pname" placeholder="이름 (예: myapp)" autocapitalize="off" autocorrect="off" spellcheck="false" />
@@ -156,12 +170,35 @@
   function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
   // 탭 전환
+  let qrLoaded = false;
   document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === t));
     const name = t.dataset.tab;
     document.getElementById("tab-main").hidden = name !== "main";
     document.getElementById("tab-manage").hidden = name !== "manage";
+    if (name === "manage" && !qrLoaded) { qrLoaded = true; loadPanelQr(); }
   }));
+
+  // 관리 탭: 폰 접속용 QR (Tailscale 주소+토큰). 토큰이 들어가므로 서버가 로컬 생성.
+  async function loadPanelQr() {
+    const box = document.getElementById("qrbox");
+    try {
+      const d = await (await fetch(q("/api/panel-url"))).json();
+      box.innerHTML = d.svg;
+      document.getElementById("qrurl").textContent = d.url;
+      document.getElementById("qrhint").textContent = d.viaTailscale
+        ? `Tailscale ${d.host} · 폰 카메라로 스캔`
+        : `⚠ Tailscale 미감지 — ${d.host} 는 로컬 전용일 수 있음`;
+      const copy = document.getElementById("qrcopy");
+      copy.hidden = false;
+      copy.onclick = async () => {
+        try { await navigator.clipboard.writeText(d.url); copy.textContent = "복사됨 ✓"; setTimeout(() => (copy.textContent = "링크 복사"), 1500); }
+        catch { copy.textContent = "복사 불가"; }
+      };
+    } catch (e) {
+      box.textContent = "QR 불러오기 실패";
+    }
+  }
 
   // "⚡ 결정 필요" 헤더/배지 = 화면에 뜬 프롬프트 개수
   function updateDecHeader() {

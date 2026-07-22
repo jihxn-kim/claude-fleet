@@ -29,7 +29,7 @@ const sessions = new SessionManager({
 });
 
 const publicDir = join(repoRoot, "public");
-const server = createServer({ panelToken: CONFIG.panelToken, publicDir, sessions });
+const server = createServer({ panelToken: CONFIG.panelToken, publicDir, sessions, port: CONFIG.port });
 
 server.listen(CONFIG.port, () => {
   console.log(`fleet orchestrator on http://127.0.0.1:${CONFIG.port}`);
