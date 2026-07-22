@@ -405,11 +405,22 @@ export class SessionManager {
 
   // Fire Claude's native /remote-control in the session so it can be driven from the
   // Claude mobile app / claude.ai/code (full typing, not just fleet's decision cards).
-  connectRemote(id: string): { ok: boolean } {
+  // On an already-connected session, /remote-control opens a menu (Disconnect this
+  // session / Show QR code / Continue); to disconnect we wait for it to render and
+  // press Enter, which selects the first (default-highlighted) item — Disconnect.
+  connectRemote(id: string, disconnect = false): { ok: boolean } {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
     this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, "-l", "/remote-control"]);
     this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, "Enter"]);
+    if (disconnect) {
+      try {
+        this.o.runner.run("sleep", ["1.2"]); // let the menu render before selecting
+      } catch {
+        /* ignore */
+      }
+      this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, "Enter"]);
+    }
     return { ok: true };
   }
 

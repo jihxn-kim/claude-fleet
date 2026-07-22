@@ -245,7 +245,7 @@
       const term = s.terminalOpen
         ? `<button data-act="bg" data-id="${esc(s.id)}">⬇︎ 백그라운드</button>`
         : `<button class="go" data-act="fg" data-id="${esc(s.id)}">⬆︎ 포그라운드</button>`;
-      const remote = `<button data-act="remote" data-id="${esc(s.id)}">${s.remoteActive ? "📱 원격 해제" : "📱 원격 연결"}</button>`;
+      const remote = `<button data-act="remote" data-id="${esc(s.id)}" data-disconnect="${s.remoteActive ? "1" : "0"}">${s.remoteActive ? "📱 원격 해제" : "📱 원격 연결"}</button>`;
       btns = `${term}${remote}<button data-act="deactivate" data-id="${esc(s.id)}">⏸ 비활성화</button>`;
     } else {
       btns = `<button class="go" data-act="resume" data-id="${esc(s.id)}">▶ 활성화</button>`;
@@ -281,7 +281,7 @@
     else if (d.act === "deactivate") await fetch(q(`/api/sessions/${d.id}/close`), { method: "POST" });
     else if (d.act === "fg") await fetch(q(`/api/sessions/${d.id}/open-terminal`), { method: "POST" });
     else if (d.act === "bg") await fetch(q(`/api/sessions/${d.id}/background-terminal`), { method: "POST" });
-    else if (d.act === "remote") await fetch(q(`/api/sessions/${d.id}/remote-control`), { method: "POST" });
+    else if (d.act === "remote") await fetch(q(`/api/sessions/${d.id}/remote-control`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ disconnect: d.disconnect === "1" }) });
     else if (d.act === "terminate") {
       if (!confirm(`'${d.label || d.id}' 을(를) 프로젝트에서 삭제할까요?\n실행 중이면 종료돼요. 로컬 대화기록은 남아서 나중에 '기존 세션 가져오기'로 되살릴 수 있어요.`)) return;
       await fetch(q(`/api/sessions/${d.id}/terminate`), { method: "POST" });

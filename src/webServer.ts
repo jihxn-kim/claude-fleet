@@ -176,7 +176,10 @@ export function createServer(
             if (sm[2] === "resume") return send(res, 200, sessions.resume(id));
             if (sm[2] === "close") return send(res, 200, sessions.close(id));
             if (sm[2] === "terminate") return send(res, 200, sessions.terminate(id));
-            if (sm[2] === "remote-control") return send(res, 200, sessions.connectRemote(id));
+            if (sm[2] === "remote-control") {
+              const { disconnect } = (await readJson(req)) as { disconnect?: boolean };
+              return send(res, 200, sessions.connectRemote(id, !!disconnect));
+            }
             if (sm[2] === "background-terminal") {
               sessions.backgroundTerminal(id);
               return send(res, 200, { ok: true });
