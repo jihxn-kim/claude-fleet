@@ -199,10 +199,11 @@ export class SessionManager {
     return entry;
   }
 
-  // Create a detached tmux session running claude, with mouse mode on so the
-  // claude transcript can be scrolled when attached.
+  // Create a detached tmux session running claude. `-e COLORTERM=truecolor`
+  // so claude renders themes in real 24-bit color (the launchd env lacks it),
+  // and mouse mode on so the transcript can be scrolled when attached.
   private spawnTmux(tmuxName: string, cwd: string, argv: string[]): void {
-    this.o.runner.run("tmux", ["new-session", "-d", "-s", tmuxName, "-c", cwd, "claude", ...argv]);
+    this.o.runner.run("tmux", ["new-session", "-d", "-s", tmuxName, "-c", cwd, "-e", "COLORTERM=truecolor", "claude", ...argv]);
     try {
       this.o.runner.run("tmux", ["set-option", "-t", tmuxName, "mouse", "on"]);
     } catch {

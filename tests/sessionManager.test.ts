@@ -46,7 +46,7 @@ test("launch: writes mcp config, runs tmux new-session with claude --session-id,
   // tmux call
   const call = runner.calls.find((c) => c.cmd === "tmux" && c.args[0] === "new-session")!;
   expect(call.args).toEqual([
-    "new-session", "-d", "-s", "fleet__myapp__uuid10", "-c", "/p/myapp",
+    "new-session", "-d", "-s", "fleet__myapp__uuid10", "-c", "/p/myapp", "-e", "COLORTERM=truecolor",
     "claude", "--session-id", e.id,
     "--permission-mode", "auto",
     "--append-system-prompt", "RULE",
