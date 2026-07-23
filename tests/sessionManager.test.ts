@@ -415,6 +415,28 @@ test("reconcile: tmux server down (list-sessions errors) marks all running stopp
   expect(store.getSession(a.id)!.status).toBe("stopped");
 });
 
+test("setLabel names the tmux window after the label (iTerm -CC tab title mirrors it)", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.calls.length = 0;
+  mgr.setLabel(e.id, "내 세션");
+  const rename = runner.calls.find((c) => c.cmd === "tmux" && c.args[0] === "rename-window");
+  expect(rename?.args).toContain("내 세션");
+  // automatic-rename would otherwise overwrite it with the running command
+  expect(runner.calls.some((c) =>
+    c.cmd === "tmux" && c.args[0] === "set-window-option" && c.args.includes("automatic-rename") && c.args.includes("off"),
+  )).toBe(true);
+});
+
+test("labelless session falls back to the project name for the window title", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.calls.length = 0;
+  mgr.openTerminal(e.id);
+  const rename = runner.calls.find((c) => c.cmd === "tmux" && c.args[0] === "rename-window");
+  expect(rename?.args).toContain("myapp");
+});
+
 test("openTerminal runs osascript for the session; missing -> 404", () => {
   const { runner, mgr } = setup();
   const e = mgr.launch("myapp");

@@ -299,6 +299,7 @@ export class SessionManager {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
     const attach = `tmux attach -t ${s.tmuxName}`; // tmuxName is slug-safe, no injection
+    this.applyWindowName(s); // the opened window/tab takes its title from the card's label
     const term = this.getTerminal();
     if (term === "iterm") {
       // iTerm2 native tmux integration (-CC): tmux windows become real iTerm windows
@@ -602,7 +603,22 @@ export class SessionManager {
     if (!s) throw new HttpError(404, `no session ${id}`);
     s.label = label;
     this.o.store.upsert(s);
+    this.applyWindowName(s); // keep an open terminal's title in sync with the card
     return s;
+  }
+
+  // Name the tmux window after the card's label. Under iTerm's -CC integration the tab
+  // title mirrors the tmux window name, so this is what makes an opened terminal carry
+  // the name set in the panel. tmux's automatic-rename would otherwise keep overwriting
+  // it with the running command (e.g. "2.1.218"), so turn that off for the window.
+  private applyWindowName(s: SessionEntry): void {
+    const name = (s.label ?? "").trim() || s.project;
+    try {
+      this.o.runner.run("tmux", ["set-window-option", "-t", s.tmuxName, "automatic-rename", "off"]);
+      this.o.runner.run("tmux", ["rename-window", "-t", s.tmuxName, name]);
+    } catch {
+      /* session isn't running — nothing to name */
+    }
   }
 
   // Adopt a session found by scanRecent — auto-registers its project by path.
