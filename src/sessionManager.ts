@@ -315,11 +315,14 @@ export class SessionManager {
         // second control client and duplicate the native windows.
         this.o.runner.run("osascript", ["-e", `tell application "iTerm" to activate`]);
       } else {
+        // Launch tmux as the window's command rather than typing it into an interactive
+        // shell: a slow/interactive shell rc (e.g. oh-my-zsh's "update? [Y/n]" prompt)
+        // would otherwise eat the first keystrokes and run a mangled command
+        // ("mux: command not found"). Running it as the profile command skips the shell.
         this.o.runner.run("osascript", [
           "-e", `tell application "iTerm"`,
           "-e", `activate`,
-          "-e", `set nw to (create window with default profile)`,
-          "-e", `tell current session of nw to write text "tmux -CC attach -t ${s.tmuxName}"`,
+          "-e", `create window with default profile command "tmux -CC attach -t ${s.tmuxName}"`,
           "-e", `end tell`,
         ]);
       }
