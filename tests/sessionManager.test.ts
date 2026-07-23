@@ -464,6 +464,7 @@ test("setLabel names the tmux window after the label (iTerm -CC tab title mirror
 test("labelless session falls back to the project name for the window title", () => {
   const { mgr, runner } = setup();
   const e = mgr.launch("myapp");
+  runner.listOutput = `${e.tmuxName}\n`; // openTerminal refuses a session whose tmux is gone
   runner.calls.length = 0;
   mgr.openTerminal(e.id);
   const rename = runner.calls.find((c) => c.cmd === "tmux" && c.args[0] === "rename-window");
@@ -473,6 +474,7 @@ test("labelless session falls back to the project name for the window title", ()
 test("openTerminal runs osascript for the session; missing -> 404", () => {
   const { runner, mgr } = setup();
   const e = mgr.launch("myapp");
+  runner.listOutput = `${e.tmuxName}\n`;
   mgr.openTerminal(e.id);
   expect(runner.calls.some((c) => c.cmd === "osascript" && c.args.join(" ").includes(e.tmuxName))).toBe(true);
   expect(() => mgr.openTerminal("nope")).toThrowError(expect.objectContaining({ status: 404 }));
@@ -613,4 +615,20 @@ test("discover hides empty stub sessions (no assistant turn)", () => {
   const ids = mgr.discover("myapp").map((s) => s.id);
   expect(ids).toContain("bbbbbbbb-real");
   expect(ids).not.toContain("aaaaaaaa-stub");
+});
+
+test("openTerminal refuses a session whose tmux is gone (409, no doomed window)", () => {
+  const { mgr } = setup();
+  const e = mgr.launch("myapp"); // runner.listOutput stays empty → tmux 'gone'
+  expect(() => mgr.openTerminal(e.id)).toThrowError(expect.objectContaining({ status: 409 }));
+});
+
+test("openTerminal's attach command exits the hosting shell so no stray terminal lingers", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.listOutput = `${e.tmuxName}\n`;
+  runner.calls.length = 0;
+  mgr.openTerminal(e.id);
+  const osa = runner.calls.find((c) => c.cmd === "osascript");
+  expect(osa?.args.join(" ")).toContain("; exit");
 });

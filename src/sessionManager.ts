@@ -195,6 +195,7 @@ export class SessionManager {
       status: "running", startedAt: this.now(), lastSeen: this.now(),
     };
     this.o.store.upsert(entry);
+    this.applyWindowName(entry); // title the window now, not only when a terminal opens
     return entry;
   }
 
@@ -263,6 +264,7 @@ export class SessionManager {
     s.startedAt = this.now();
     s.lastSeen = this.now();
     this.o.store.upsert(s);
+    this.applyWindowName(s); // reactivated sessions carry their label too
     return s;
   }
 
@@ -308,7 +310,15 @@ export class SessionManager {
   openTerminal(id: string): void {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
-    const attach = `tmux attach -t ${s.tmuxName}`; // tmuxName is slug-safe, no injection
+    // Guard first: with `; exit` below, attaching to a dead session would flash a window
+    // and vanish with no clue. Fail loudly in the panel instead.
+    if (!this.tmuxSessionExists(s.tmuxName)) {
+      throw new HttpError(409, "세션이 실행 중이 아니에요. 먼저 활성화해주세요.");
+    }
+    // `; exit` so the hosting shell terminates when tmux does. Without it, detaching
+    // leaves the shell behind and its window/tab lingers (for -CC that's the buried
+    // control session reappearing as a stray terminal).
+    const attach = `tmux attach -t ${s.tmuxName}; exit`; // tmuxName is slug-safe, no injection
     this.applyWindowName(s); // the opened window/tab takes its title from the card's label
     const term = this.getTerminal();
     if (term === "iterm") {
@@ -337,7 +347,7 @@ export class SessionManager {
           "-e", `activate`,
           "-e", `set nw to (create window with default profile)`,
           "-e", `tell current session of nw to write text ""`,
-          "-e", `tell current session of nw to write text "tmux -CC attach -t ${s.tmuxName}"`,
+          "-e", `tell current session of nw to write text "tmux -CC attach -t ${s.tmuxName}; exit"`,
           "-e", `end tell`,
         ]);
       }
@@ -570,6 +580,7 @@ export class SessionManager {
       status: "running", startedAt: this.now(), lastSeen: this.now(),
     };
     this.o.store.upsert(entry);
+    this.applyWindowName(entry);
     return entry;
   }
 
