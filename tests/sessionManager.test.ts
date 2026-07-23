@@ -11,10 +11,18 @@ class FakeRunner implements CommandRunner {
   paneContent = ""; // returned for `tmux capture-pane`
   paneCommand = ""; // returned for `tmux display-message ... #{pane_current_command}`
   failKeys = new Set<string>();
+  failMessage = "fake fail"; // lets a test emit tmux's real "no server running" wording
   run(cmd: string, args: string[]): string {
     this.calls.push({ cmd, args });
     const sub = args[0];
-    if (this.failKeys.has(sub)) throw new Error(`fake fail ${sub}`);
+    if (this.failKeys.has(sub)) throw new Error(`${this.failMessage} ${sub}`);
+    // has-session mirrors reality: it only succeeds for a session in the live list.
+    if (cmd === "tmux" && sub === "has-session") {
+      const target = args[args.indexOf("-t") + 1] ?? "";
+      const live = this.listOutput.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (!live.includes(target)) throw new Error(`can't find session: ${target}`);
+      return "";
+    }
     if (cmd === "tmux" && sub === "list-sessions") return this.listOutput;
     if (cmd === "tmux" && sub === "capture-pane") return this.paneContent;
     if (cmd === "tmux" && sub === "display-message") return this.paneCommand;
@@ -407,12 +415,37 @@ test("reconcile: running sessions absent from tmux list become stopped", () => {
   expect(store.getSession(b.id)!.status).toBe("stopped");
 });
 
-test("reconcile: tmux server down (list-sessions errors) marks all running stopped", () => {
+test("reconcile: tmux server genuinely down ('no server running') marks all running stopped", () => {
   const { store, runner, mgr } = setup();
   const a = mgr.launch("myapp");
+  runner.failMessage = "no server running on /tmp/tmux-501/default:";
   runner.failKeys.add("list-sessions");
   mgr.reconcile();
   expect(store.getSession(a.id)!.status).toBe("stopped");
+});
+
+test("reconcile: an inconclusive tmux failure leaves statuses untouched (never mass-stops live sessions)", () => {
+  const { store, runner, mgr } = setup();
+  const a = mgr.launch("myapp");
+  runner.failMessage = "connection timed out"; // not a definitive "no server running"
+  runner.failKeys.add("list-sessions");
+  mgr.reconcile();
+  // Marking live sessions stopped is what led a user to hit "reactivate" and kill a
+  // running claude — so an unreadable tmux must change nothing.
+  expect(store.getSession(a.id)!.status).toBe("running");
+});
+
+test("resume never kills a session that is actually running claude (stale 'stopped' status)", () => {
+  const { store, runner, mgr } = setup();
+  const e = mgr.launch("myapp");
+  store.setStatus(e.id, "stopped"); // stale/incorrect status…
+  runner.listOutput = `${e.tmuxName}\n`; // …but tmux is alive…
+  runner.paneCommand = "2.1.217"; // …running claude
+  runner.calls.length = 0;
+  const out = mgr.resume(e.id);
+  expect(out.status).toBe("running"); // adopted back, not restarted
+  expect(runner.calls.some((c) => c.cmd === "tmux" && c.args[0] === "kill-session")).toBe(false);
+  expect(runner.calls.some((c) => c.cmd === "tmux" && c.args[0] === "new-session")).toBe(false);
 });
 
 test("setLabel names the tmux window after the label (iTerm -CC tab title mirrors it)", () => {

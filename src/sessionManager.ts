@@ -246,6 +246,16 @@ export class SessionManager {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
     if (s.status === "running") throw new HttpError(409, `session ${id} already running`);
+    // The stored status can be stale — a transient tmux read can mark a live session
+    // stopped, and then "reactivate" would kill a claude that is mid-conversation and
+    // restart it from the last saved state. So never kill a session that is actually
+    // running claude: adopt it back as running instead.
+    if (this.tmuxSessionExists(s.tmuxName) && !this.paneIsShell(s.tmuxName)) {
+      s.status = "running";
+      s.lastSeen = this.now();
+      this.o.store.upsert(s);
+      return s;
+    }
     if (this.o.store.runningCount(s.project) >= 2) throw new HttpError(409, `max 2 running for ${s.project}`);
     this.killTmux(s.tmuxName); // clear a stale shell-dropped session → exactly one fresh
     this.spawnTmux(s.tmuxName, s.projectPath, this.claudeArgv("--resume", id, this.activeSessionIds().has(id)));
@@ -471,7 +481,9 @@ export class SessionManager {
   }
 
   reconcile(): void {
-    const live = new Set(this.liveFleetSessions());
+    const liveList = this.liveFleetSessions();
+    if (liveList === null) return; // couldn't ask tmux — leave every status untouched
+    const live = new Set(liveList);
     for (const s of this.o.store.listSessions()) {
       // claude is running iff the tmux session is alive AND its pane isn't a shell.
       const claudeRunning = live.has(s.tmuxName) && !this.paneIsShell(s.tmuxName);
@@ -503,6 +515,15 @@ export class SessionManager {
   // Best-effort kill: clears a stale tmux session before we spawn a fresh one, so
   // reactivating a shell-dropped session reuses the one name instead of hitting a
   // "duplicate session" error. A no-op (ignored error) if nothing is there.
+  private tmuxSessionExists(tmuxName: string): boolean {
+    try {
+      this.o.runner.run("tmux", ["has-session", "-t", tmuxName]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private killTmux(tmuxName: string): void {
     try {
       this.o.runner.run("tmux", ["kill-session", "-t", tmuxName]);
@@ -642,12 +663,17 @@ export class SessionManager {
     }
   }
 
-  private liveFleetSessions(): string[] {
+  // null = tmux couldn't be queried conclusively. Callers must NOT read that as
+  // "everything died": marking live sessions stopped is what makes the panel show ⚫ and
+  // invites a reactivate that would kill a running claude. Only a genuine "no server
+  // running" means there are really zero sessions.
+  private liveFleetSessions(): string[] | null {
     let out = "";
     try {
       out = this.o.runner.run("tmux", ["list-sessions", "-F", "#{session_name}"]);
-    } catch {
-      return []; // no tmux server = no live sessions
+    } catch (e) {
+      const msg = `${(e as { stderr?: string }).stderr ?? ""} ${(e as Error).message ?? ""}`;
+      return /no server running|error connecting to|no such file or directory/i.test(msg) ? [] : null;
     }
     return out.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("fleet__"));
   }
