@@ -706,3 +706,42 @@ test("close with no attached client does no window work", () => {
   mgr.close(e.id);
   expect(runner.calls.some((c) => c.cmd === "osascript")).toBe(false);
 });
+
+test("sampleActivity: busy survives the background-agent list pushing the status line up", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  // Real meday shape: the status line is NOT last — claude's agent list renders under it,
+  // and capture-pane pads the bottom with blank rows. A naive "last 8 lines" misses it.
+  runner.paneContent = [
+    "  ⎿  some earlier tool output", "",
+    "──────────────────────────────",
+    "❯ ",
+    "──────────────────────────────",
+    "  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← 6 agents · ↓ to manage",
+    "",
+    "  ⏺ main",
+    "  ◯ general-purpose  Review waitlist notify trigger slice",
+    "  ◯ general-purpose  Implement 관리자 회원 이용중지",
+    "  ◯ general-purpose  Notion 발췌",
+    "  ◯ general-purpose  결제 게이트웨이",
+    "  ◯ general-purpose  스케줄러 점검",
+    "", "", "",
+  ].join("\n");
+  mgr.sampleActivity();
+  expect(mgr.sessionActivity()[e.id]).toBe("busy");
+});
+
+test("sampleActivity: 'esc to interrupt' merely mentioned in conversation text does not mark busy", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = [
+    "우리가 esc to interrupt 로 busy 를 판정하고 있어서 그 문구를 설명했다.",
+    "──────────────────────────────",
+    "❯ ",
+    "──────────────────────────────",
+    "  ⏵⏵ auto mode on (shift+tab to cycle) · ← 6 agents",
+    "", "",
+  ].join("\n");
+  mgr.sampleActivity();
+  expect(mgr.sessionActivity()[e.id]).toBe("idle");
+});

@@ -805,26 +805,40 @@ export class SessionManager {
   // mention "interrupt" can't cause a false positive. Works for detached sessions and
   // survives --fork-session id changes (it reads the screen, not a session file).
   private paneShowsBusy(pane: string): boolean {
-    const lines = pane.split("\n");
-    // main is generating / running a tool
-    if (/esc to interrupt/i.test(lines.slice(-8).join("\n"))) return true;
+    const lines = this.visibleLines(pane);
+    // main is generating / running a tool. The status line is NOT the bottom row: claude
+    // renders its background-agent list ("⏺ main", "◯ general-purpose …") beneath it, so
+    // with several agents the line sits well above the end — look far enough up. The
+    // "· esc to interrupt" anchor (the status line's middot separator) keeps the wider
+    // window from matching conversation text that merely mentions the phrase.
+    if (/·\s*esc to interrupt/i.test(lines.slice(-20).join("\n"))) return true;
     // ...but typing into the composer collapses the status line and HIDES "esc to
     // interrupt". The spinner/working line just above the composer survives and carries
     // an elapsed-time counter — "(3s ·", "(1m 8s ·", "(2h 4m 9s ·" — that only appears
     // while generating. Match it so a busy session a user is typing into isn't misread
     // as idle (completed sessions leave no such counter).
-    if (/\((?:\d+h )?(?:\d+m )?\d+s ·/.test(lines.slice(-12).join("\n"))) return true;
+    if (/\((?:\d+h )?(?:\d+m )?\d+s ·/.test(lines.slice(-20).join("\n"))) return true;
     // blocked waiting on a background subagent (Task) — still working, just no
     // "esc to interrupt" line. The agent manager list can push this up a few rows.
-    if (/Waiting for \d+ background agents? to finish/i.test(lines.slice(-16).join("\n"))) return true;
+    if (/Waiting for \d+ background agents? to finish/i.test(lines.slice(-24).join("\n"))) return true;
     return false;
+  }
+
+  // `capture-pane` pads the bottom of a pane with blank rows, so a raw "last N lines"
+  // window can be all whitespace and miss the status line entirely. Drop the trailing
+  // blanks so N counts actual content.
+  private visibleLines(pane: string): string[] {
+    const lines = pane.split("\n");
+    while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+    return lines;
   }
 
   // While remote-control is connected, claude shows a persistent "/rc" affordance in the
   // bottom-right status area — unlike the "is active" line, it doesn't scroll away, so a
   // single bottom-of-pane check is enough. Reflects panel AND manual terminal connects.
   private paneShowsRemote(pane: string): boolean {
-    return /\/rc\b/.test(pane.split("\n").slice(-4).join("\n"));
+    // Same pitfall as the busy check: the agent list below can push the status row up.
+    return /\/rc\b/.test(this.visibleLines(pane).slice(-12).join("\n"));
   }
 
   // Sample every running session once. Called on a fixed interval by the server, so
