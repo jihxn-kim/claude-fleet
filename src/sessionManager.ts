@@ -804,22 +804,36 @@ export class SessionManager {
   // idle prompt. Only the bottom lines are checked so conversation text that happens to
   // mention "interrupt" can't cause a false positive. Works for detached sessions and
   // survives --fork-session id changes (it reads the screen, not a session file).
+  // Judge by SCREEN STRUCTURE, not by hunting text near the bottom. claude's input
+  // composer is a `───` bordered box: its status line always renders *below* the bottom
+  // border, and the spinner/working line just *above* the top border. Everything a
+  // conversation prints — including text that quotes "esc to interrupt" or a "(3s ·"
+  // timer, as this project's own sessions constantly do — lives above the composer, so
+  // anchoring to the composer makes such quotes structurally unable to false-positive.
   private paneShowsBusy(pane: string): boolean {
     const lines = this.visibleLines(pane);
-    // main is generating / running a tool. The status line is NOT the bottom row: claude
-    // renders its background-agent list ("⏺ main", "◯ general-purpose …") beneath it, so
-    // with several agents the line sits well above the end — look far enough up. The
-    // "· esc to interrupt" anchor (the status line's middot separator) keeps the wider
-    // window from matching conversation text that merely mentions the phrase.
-    if (/·\s*esc to interrupt/i.test(lines.slice(-20).join("\n"))) return true;
-    // ...but typing into the composer collapses the status line and HIDES "esc to
-    // interrupt". The spinner/working line just above the composer survives and carries
-    // an elapsed-time counter — "(3s ·", "(1m 8s ·", "(2h 4m 9s ·" — that only appears
-    // while generating. Match it so a busy session a user is typing into isn't misread
-    // as idle (completed sessions leave no such counter).
-    if (/\((?:\d+h )?(?:\d+m )?\d+s ·/.test(lines.slice(-20).join("\n"))) return true;
-    // blocked waiting on a background subagent (Task) — still working, just no
-    // "esc to interrupt" line. The agent manager list can push this up a few rows.
+    const isRule = (l: string) => /^\s*\u2500{10,}/.test(l);
+    let bottom = -1;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (isRule(lines[i])) { bottom = i; break; }
+    }
+    if (bottom >= 0) {
+      // Status-line region: below the composer. The agent list may follow it — still below.
+      if (/esc to interrupt/i.test(lines.slice(bottom + 1).join("\n"))) return true;
+      let top = -1;
+      for (let i = bottom - 1; i >= 0; i--) {
+        if (isRule(lines[i])) { top = i; break; }
+      }
+      if (top >= 0) {
+        // Spinner line, e.g. "· Scampering… (3s · thinking…)" — it survives typing, which
+        // collapses the status line. The "…(<elapsed>" shape keeps prose from matching.
+        // Anchored to the line START \u2014 "<glyph> Gerund\u2026 (12s \u00b7" \u2014 so prose that quotes the
+        // shape mid-sentence (this project's own sessions do) can't trigger it.
+        const spinner = lines.slice(Math.max(0, top - 3), top).join("\n");
+        if (/^\s*\S{1,2}\s+\S+\u2026\s*\((?:\d+h )?(?:\d+m )?\d+s\b/m.test(spinner)) return true;
+      }
+    }
+    // Blocked on a background subagent — printed in the transcript, not the status line.
     if (/Waiting for \d+ background agents? to finish/i.test(lines.slice(-24).join("\n"))) return true;
     return false;
   }

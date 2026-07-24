@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { SessionStore } from "../src/sessionStore.js";
 import { SessionManager, HttpError, type CommandRunner } from "../src/sessionManager.js";
 
+const RULE = "\u2500".repeat(30); // claude's composer border — status line sits below it
+
 class FakeRunner implements CommandRunner {
   calls: Array<{ cmd: string; args: string[] }> = [];
   listOutput = "";
@@ -77,7 +79,8 @@ test("launch: runs tmux new-session with claude --session-id (no MCP flags — k
 test("sampleActivity: busy when the status line shows 'esc to interrupt', else idle", () => {
   const { mgr, runner } = setup();
   const e = mgr.launch("myapp"); // running session
-  runner.paneContent = "some output\n  auto mode on · esc to interrupt · 5 agents";
+  // real shape: the status line renders BELOW the composer's bottom border
+  runner.paneContent = ["some output", RULE, "❯ ", RULE, "  auto mode on · esc to interrupt · 5 agents"].join("\n");
   mgr.sampleActivity();
   expect(mgr.sessionActivity()[e.id]).toBe("busy");
   // typing at the idle prompt changes the screen but shows no "esc to interrupt"
@@ -108,7 +111,7 @@ test("sampleActivity: split window — reads claude's own (oldest) pane, ignorin
   const e = mgr.launch("myapp");
   // %0 = claude (oldest pane), %1 = a log tail the user split in. Detection must read %0.
   runner.panes = [
-    "❯ \n  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← 6 agents",
+    [RULE, "❯ ", RULE, "  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← 6 agents"].join("\n"),
     "server listening\n  r_id ASC LIMIT 200 -- PARAMETERS: [...]",
   ];
   mgr.sampleActivity();
@@ -744,4 +747,31 @@ test("sampleActivity: 'esc to interrupt' merely mentioned in conversation text d
   ].join("\n");
   mgr.sampleActivity();
   expect(mgr.sessionActivity()[e.id]).toBe("idle");
+});
+
+test("sampleActivity: prose above the composer quoting the spinner shape does not mark busy", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  // This project's own sessions constantly print these strings while discussing detection.
+  runner.paneContent = [
+    "스피너 줄은 `· Scampering… (3s · thinking)` 형태이고 상태줄엔 `· esc to interrupt` 가 있다고 설명했다.",
+    "그래서 (12s · ...) 같은 타이머 문자열도 대화에 그대로 나온다.",
+    RULE, "❯ ", RULE,
+    "  ⏵⏵ auto mode on (shift+tab to cycle) · ← 6 agents",
+  ].join("\n");
+  mgr.sampleActivity();
+  expect(mgr.sessionActivity()[e.id]).toBe("idle");
+});
+
+test("sampleActivity: the real spinner line (glyph + gerund…, above the composer) still marks busy", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.paneContent = [
+    "  ⎿  Running…",
+    "· Scampering… (3s · thinking with xhigh effort)",
+    RULE, "❯ 타이핑 중이라 상태줄이 접힘", RULE,
+    "  ⏸ manual mode on",
+  ].join("\n");
+  mgr.sampleActivity();
+  expect(mgr.sessionActivity()[e.id]).toBe("busy");
 });
