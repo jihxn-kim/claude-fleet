@@ -11,6 +11,7 @@ class FakeRunner implements CommandRunner {
   paneContent = ""; // returned for `tmux capture-pane` (single-pane sessions)
   panes: string[] = []; // when set, the session is split: list-panes yields %0.. and each capture returns panes[i]
   paneCommand = ""; // returned for `tmux display-message ... #{pane_current_command}`
+  clientTty = ""; // returned for `tmux list-clients` (the -CC control shell's tty)
   failKeys = new Set<string>();
   failMessage = "fake fail"; // lets a test emit tmux's real "no server running" wording
   run(cmd: string, args: string[]): string {
@@ -25,6 +26,7 @@ class FakeRunner implements CommandRunner {
       return "";
     }
     if (cmd === "tmux" && sub === "list-sessions") return this.listOutput;
+    if (cmd === "tmux" && sub === "list-clients") return this.clientTty;
     if (cmd === "tmux" && sub === "list-panes") {
       const n = this.panes.length || 1;
       return Array.from({ length: n }, (_, i) => `%${i}`).join("\n");
@@ -670,4 +672,37 @@ test("openTerminal's attach command exits the hosting shell so no stray terminal
   mgr.openTerminal(e.id);
   const osa = runner.calls.find((c) => c.cmd === "osascript");
   expect(osa?.args.join(" ")).toContain("; exit");
+});
+
+test("close reads the control client tty BEFORE killing, then closes that tab (not the window)", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.clientTty = "/dev/ttys012"; // the -CC control shell
+  runner.calls.length = 0;
+  mgr.close(e.id);
+  const iList = runner.calls.findIndex((c) => c.cmd === "tmux" && c.args[0] === "list-clients");
+  const iKill = runner.calls.findIndex((c) => c.cmd === "tmux" && c.args[0] === "kill-session");
+  expect(iList).toBeGreaterThanOrEqual(0);
+  expect(iKill).toBeGreaterThan(iList); // must read the tty while a client still exists
+  const osa = runner.calls.find((c) => c.cmd === "osascript")!;
+  expect(osa.args.join(" ")).toContain("/dev/ttys012");
+  expect(osa.args.join(" ")).toContain("close ss"); // tab only — never take down the user's other tabs
+});
+
+test("terminate also clears the leftover control shell", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.clientTty = "/dev/ttys099";
+  runner.calls.length = 0;
+  mgr.terminate(e.id);
+  expect(runner.calls.some((c) => c.cmd === "osascript" && c.args.join(" ").includes("/dev/ttys099"))).toBe(true);
+});
+
+test("close with no attached client does no window work", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  runner.clientTty = ""; // nothing attached
+  runner.calls.length = 0;
+  mgr.close(e.id);
+  expect(runner.calls.some((c) => c.cmd === "osascript")).toBe(false);
 });

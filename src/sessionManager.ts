@@ -271,12 +271,67 @@ export class SessionManager {
   close(id: string): SessionEntry {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
+    const tty = this.attachedClientTty(s.tmuxName); // grab before the kill drops the client
     try {
       this.o.runner.run("tmux", ["kill-session", "-t", s.tmuxName]);
     } catch {
       // already gone — fine
     }
+    this.closeTerminalTab(tty); // clear the -CC control shell it leaves behind
     return this.o.store.setStatus(id, "stopped")!;
+  }
+
+  // The tty of the terminal client attached to this session — under iTerm's -CC that is
+  // the (buried) control/backchannel shell, not claude's own window. Capture it BEFORE
+  // detaching/killing, because afterwards there is no client left to ask about.
+  private attachedClientTty(tmuxName: string): string {
+    try {
+      return this.o.runner
+        .run("tmux", ["list-clients", "-t", tmuxName, "-F", "#{client_tty}"])
+        .trim().split("\n")[0] ?? "";
+    } catch {
+      return "";
+    }
+  }
+
+  // Close the terminal tab hosting `tty`. When a -CC session ends, its control shell stops
+  // being a tmux client and resurfaces as a stray terminal — this clears it. Closes the
+  // SESSION, not the window, so a tab sitting among the user's own tabs doesn't take them
+  // down with it.
+  private closeTerminalTab(tty: string): void {
+    if (!tty) return;
+    try {
+      this.o.runner.run("sleep", ["0.5"]); // let -CC exit and the shell resurface first
+    } catch {
+      /* ignore */
+    }
+    const term = this.getTerminal();
+    try {
+      if (term === "iterm") {
+        this.o.runner.run("osascript", [
+          "-e", `tell application "iTerm"`,
+          "-e", `repeat with w in windows`,
+          "-e", `repeat with tb in tabs of w`,
+          "-e", `repeat with ss in sessions of tb`,
+          "-e", `if tty of ss is "${tty}" then close ss`,
+          "-e", `end repeat`,
+          "-e", `end repeat`,
+          "-e", `end repeat`,
+          "-e", `end tell`,
+        ]);
+      } else if (term === "terminal") {
+        this.o.runner.run("osascript", [
+          "-e", `tell application "Terminal"`,
+          "-e", `repeat with w in windows`,
+          "-e", `repeat with tb in tabs of w`,
+          "-e", `if tty of tb is "${tty}" then close tb`,
+          "-e", `end repeat`,
+          "-e", `end tell`,
+        ]);
+      }
+    } catch {
+      /* window already gone — nothing to clear */
+    }
   }
 
   // Terminal apps installed on this machine.
@@ -368,45 +423,14 @@ export class SessionManager {
   backgroundTerminal(id: string): void {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
-    let tty = "";
-    try {
-      tty = this.o.runner.run("tmux", ["list-clients", "-t", s.tmuxName, "-F", "#{client_tty}"]).trim().split("\n")[0] ?? "";
-    } catch {
-      tty = "";
-    }
+    const tty = this.attachedClientTty(s.tmuxName);
     if (!tty) return; // nothing attached → already in background
     try {
       this.o.runner.run("tmux", ["detach-client", "-s", s.tmuxName]); // no running job → close won't prompt
     } catch {
       /* fine */
     }
-    const term = this.getTerminal();
-    try {
-      if (term === "iterm") {
-        this.o.runner.run("osascript", [
-          "-e", `tell application "iTerm"`,
-          "-e", `repeat with w in windows`,
-          "-e", `repeat with tb in tabs of w`,
-          "-e", `repeat with ss in sessions of tb`,
-          "-e", `if tty of ss is "${tty}" then close w`,
-          "-e", `end repeat`,
-          "-e", `end repeat`,
-          "-e", `end repeat`,
-          "-e", `end tell`,
-        ]);
-      } else if (term === "terminal") {
-        this.o.runner.run("osascript", [
-          "-e", `tell application "Terminal"`,
-          "-e", `repeat with w in windows`,
-          "-e", `repeat with tb in tabs of w`,
-          "-e", `if tty of tb is "${tty}" then close w`,
-          "-e", `end repeat`,
-          "-e", `end tell`,
-        ]);
-      }
-    } catch {
-      /* window already gone — session is detached either way */
-    }
+    this.closeTerminalTab(tty);
   }
 
   // Terminate a session: kill its tmux (stops claude) and drop it from the fleet.
@@ -414,11 +438,13 @@ export class SessionManager {
   terminate(id: string): { ok: boolean } {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
+    const tty = this.attachedClientTty(s.tmuxName); // grab before the kill drops the client
     try {
       this.o.runner.run("tmux", ["kill-session", "-t", s.tmuxName]);
     } catch {
       /* already gone */
     }
+    this.closeTerminalTab(tty); // clear the -CC control shell it leaves behind
     this.o.store.removeSession(id);
     return { ok: true };
   }
