@@ -240,7 +240,7 @@
       `<button class="popt${multi ? " mpopt" : ""}" data-n="${Number(o.n)}"><b>${Number(o.n)}</b>${esc(o.label)}</button>`).join("");
     const submitBtn = multi ? `<button class="send mpsubmit">선택 완료</button>` : "";
     const hasMemo = s.prompt.options.some((o) => /type something/i.test(o.label));
-    const memoBox = hasMemo ? `<textarea class="pmemo" placeholder="메모로 답하기 (자유입력)"></textarea><button class="send pmemo-send">메모 전송</button>` : "";
+    const memoBox = hasMemo ? `<textarea class="pmemo" placeholder="메모로 답하기 — Enter 전송, Shift+Enter 줄바꿈"></textarea><button class="send pmemo-send">메모 전송</button>` : "";
     el.innerHTML = `
       <div class="dhead"><span class="tag">▸</span> ${esc(s.label || s.tmuxName)}${multi ? ' <span class="mtag">여러 개 선택</span>' : ""}</div>
       <div class="dpath">${esc(s.projectPath || s.project || "")}</div>
@@ -267,12 +267,22 @@
       sendPrompt(`/api/sessions/${id}/prompt-multi`, { ns }, sub);
     });
     const ms = el.querySelector(".pmemo-send");
-    if (ms) ms.addEventListener("click", () => {
-      const text = (el.querySelector(".pmemo").value || "").trim();
-      if (!text) { el.querySelector(".pmemo").focus(); return; }
-      ms.disabled = true;
-      sendPrompt(`/api/sessions/${id}/prompt-memo`, { text }, ms);
-    });
+    if (ms) {
+      const submitMemo = () => {
+        const box = el.querySelector(".pmemo");
+        const text = (box.value || "").trim();
+        if (!text) { box.focus(); return; }
+        ms.disabled = true;
+        sendPrompt(`/api/sessions/${id}/prompt-memo`, { text }, ms);
+      };
+      ms.addEventListener("click", submitMemo);
+      // Enter sends, Shift+Enter (and IME composition) inserts a newline.
+      el.querySelector(".pmemo").addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing || ev.keyCode === 229) return;
+        ev.preventDefault();
+        if (!ms.disabled) submitMemo();
+      });
+    }
     return el;
   }
   async function sendPrompt(url, body, btn) {
