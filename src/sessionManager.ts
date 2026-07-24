@@ -804,6 +804,30 @@ export class SessionManager {
   // detection cadence is independent of how many panels are polling. In one pass it
   // derives busy/idle, whether a terminal window is attached (tmux clients), and whether
   // Claude's native remote-control is connected.
+  // Capture every pane in the session (all windows), not just the active one. A user can
+  // split the window to run a query beside claude; `capture-pane -t <session>` then reads
+  // whichever pane is focused, so claude's status line is missed whenever the other pane
+  // is active and the session looks idle. Reading every pane makes detection focus-proof.
+  private capturePanes(tmuxName: string): string[] {
+    let ids: string[];
+    try {
+      ids = this.o.runner
+        .run("tmux", ["list-panes", "-s", "-t", tmuxName, "-F", "#{pane_id}"])
+        .split("\n").map((l) => l.trim()).filter(Boolean);
+    } catch {
+      return []; // session gone
+    }
+    const out: string[] = [];
+    for (const id of ids) {
+      try {
+        out.push(this.o.runner.run("tmux", ["capture-pane", "-p", "-t", id]));
+      } catch {
+        /* pane vanished mid-scan */
+      }
+    }
+    return out;
+  }
+
   sampleActivity(): void {
     const next: Record<string, string> = {};
     const term: Record<string, boolean> = {};
@@ -811,23 +835,24 @@ export class SessionManager {
     const prompt: Record<string, SessionPrompt | null> = {};
     for (const s of this.o.store.listSessions()) {
       if (s.status !== "running") continue;
-      let pane: string | null = null;
-      try {
-        pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
-      } catch {
-        /* tmux session gone */
-      }
-      if (pane === null) {
+      const panes = this.capturePanes(s.tmuxName);
+      if (panes.length === 0) {
         next[s.id] = "idle";
         term[s.id] = false;
         remote[s.id] = false;
         prompt[s.id] = null;
         continue;
       }
-      next[s.id] = this.paneShowsBusy(pane) ? "busy" : "idle";
-      remote[s.id] = this.paneShowsRemote(pane);
-      const p = this.parsePrompt(pane);
-      prompt[s.id] = p ? { context: p.context, options: p.options, multiSelect: p.multiSelect } : null;
+      // busy/remote if ANY pane shows the signal; the prompt comes from whichever pane
+      // is actually claude's (the one that yields a parse).
+      next[s.id] = panes.some((p) => this.paneShowsBusy(p)) ? "busy" : "idle";
+      remote[s.id] = panes.some((p) => this.paneShowsRemote(p));
+      let parsed: SessionPrompt | null = null;
+      for (const p of panes) {
+        const pr = this.parsePrompt(p);
+        if (pr) { parsed = { context: pr.context, options: pr.options, multiSelect: pr.multiSelect }; break; }
+      }
+      prompt[s.id] = parsed;
       let clients = "";
       try {
         clients = this.o.runner.run("tmux", ["list-clients", "-t", s.tmuxName]).trim();

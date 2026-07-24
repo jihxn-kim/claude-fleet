@@ -8,7 +8,8 @@ import { SessionManager, HttpError, type CommandRunner } from "../src/sessionMan
 class FakeRunner implements CommandRunner {
   calls: Array<{ cmd: string; args: string[] }> = [];
   listOutput = "";
-  paneContent = ""; // returned for `tmux capture-pane`
+  paneContent = ""; // returned for `tmux capture-pane` (single-pane sessions)
+  panes: string[] = []; // when set, the session is split: list-panes yields %0.. and each capture returns panes[i]
   paneCommand = ""; // returned for `tmux display-message ... #{pane_current_command}`
   failKeys = new Set<string>();
   failMessage = "fake fail"; // lets a test emit tmux's real "no server running" wording
@@ -24,7 +25,16 @@ class FakeRunner implements CommandRunner {
       return "";
     }
     if (cmd === "tmux" && sub === "list-sessions") return this.listOutput;
-    if (cmd === "tmux" && sub === "capture-pane") return this.paneContent;
+    if (cmd === "tmux" && sub === "list-panes") {
+      const n = this.panes.length || 1;
+      return Array.from({ length: n }, (_, i) => `%${i}`).join("\n");
+    }
+    if (cmd === "tmux" && sub === "capture-pane") {
+      const t = args[args.indexOf("-t") + 1] ?? "";
+      const m = /^%(\d+)$/.exec(t);
+      if (m && this.panes.length) return this.panes[Number(m[1])] ?? "";
+      return this.paneContent;
+    }
     if (cmd === "tmux" && sub === "display-message") return this.paneCommand;
     return "";
   }
@@ -87,6 +97,19 @@ test("sampleActivity: busy while typing into the composer (status line hides 'es
     "──────────",
     "  ⏸ manual mode on",
   ].join("\n");
+  mgr.sampleActivity();
+  expect(mgr.sessionActivity()[e.id]).toBe("busy");
+});
+
+test("sampleActivity: split window — busy is detected in claude's pane even when another pane is focused", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  // Two panes: a SQL query beside claude. capture-pane -t <session> would read only the
+  // focused one; scanning all panes must still see claude's "esc to interrupt".
+  runner.panes = [
+    "SELECT * FROM users LIMIT 200;\n  r_id ASC LIMIT 200 -- PARAMETERS: [...]",
+    "❯ \n  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← 6 agents",
+  ];
   mgr.sampleActivity();
   expect(mgr.sessionActivity()[e.id]).toBe("busy");
 });
