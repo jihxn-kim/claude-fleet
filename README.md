@@ -17,7 +17,7 @@
 - 로컬 `~/.claude/projects` 전체를 스캔해 **기존 세션을 등록 없이** 목록화(실행 중 표시), 골라서 fleet로 adopt(`--fork-session`으로 히스토리 유지).
 - 결정 채널은 MCP 툴 1개. 나머지(오케스트레이션·UI·세션관리)는 평범한 HTTP + tmux.
 - 원격 접속은 Tailscale로. `/internal/*`는 loopback 게이트, 패널 API는 토큰 가드.
-- "맥에서 열기"는 설치된 터미널을 감지해 attach. iTerm2는 `tmux -CC` 네이티브 통합으로 붙어 네이티브 스크롤/선택이 되고, 1회 설정이 필요하다 → [`docs/TERMINALS.md`](docs/TERMINALS.md).
+- "맥에서 열기"는 설치된 터미널을 감지해 attach. **권장 터미널은 iTerm2** — `tmux -CC` 네이티브 통합으로 붙어 네이티브 스크롤/선택이 되고(다른 터미널은 copy-mode), 1회 설정이 필요하다 → [`docs/TERMINALS.md`](docs/TERMINALS.md).
 
 ## 빠른 시작
 
