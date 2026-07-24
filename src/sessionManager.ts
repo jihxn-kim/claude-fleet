@@ -431,16 +431,17 @@ export class SessionManager {
   connectRemote(id: string, disconnect = false): { ok: boolean } {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
+    const t = this.claudePane(s.tmuxName); // read + type on claude's pane, not the focused one
     // Slash commands only run at the idle prompt; while claude is generating, the
     // keystrokes just pile up in the input box unexecuted. Refuse with a clear message.
     let busy = false;
     try {
-      busy = this.paneShowsBusy(this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]));
+      busy = this.paneShowsBusy(this.o.runner.run("tmux", ["capture-pane", "-p", "-t", t]));
     } catch {
       /* can't read → assume idle */
     }
     if (busy) throw new HttpError(409, "세션이 작업 중이라 원격제어를 걸 수 없어요. ✅ 완료(유휴)일 때 눌러주세요.");
-    const send = (...keys: string[]) => this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, ...keys]);
+    const send = (...keys: string[]) => this.o.runner.run("tmux", ["send-keys", "-t", t, ...keys]);
     const nap = (sec: string) => {
       try {
         this.o.runner.run("sleep", [sec]);
@@ -462,7 +463,7 @@ export class SessionManager {
       for (let i = 0; i < 6 && !opened; i++) {
         nap("0.4");
         try {
-          pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
+          pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", t]);
         } catch {
           pane = "";
         }
@@ -804,28 +805,22 @@ export class SessionManager {
   // detection cadence is independent of how many panels are polling. In one pass it
   // derives busy/idle, whether a terminal window is attached (tmux clients), and whether
   // Claude's native remote-control is connected.
-  // Capture every pane in the session (all windows), not just the active one. A user can
-  // split the window to run a query beside claude; `capture-pane -t <session>` then reads
-  // whichever pane is focused, so claude's status line is missed whenever the other pane
-  // is active and the session looks idle. Reading every pane makes detection focus-proof.
-  private capturePanes(tmuxName: string): string[] {
-    let ids: string[];
+  // The pane fleet's own claude runs in. fleet launches claude as the session's initial
+  // pane, so it is always the OLDEST pane — the lowest `%N` id — even after a user splits
+  // the window to tail a log or (deliberately) run a second claude beside it. Every read
+  // and keystroke targets this pane, so detection and answers stay on OUR claude no matter
+  // which pane is focused or what else is running alongside it. Falls back to the session
+  // (its active pane) if the pane list can't be read.
+  private claudePane(tmuxName: string): string {
     try {
-      ids = this.o.runner
+      const ids = this.o.runner
         .run("tmux", ["list-panes", "-s", "-t", tmuxName, "-F", "#{pane_id}"])
-        .split("\n").map((l) => l.trim()).filter(Boolean);
+        .split("\n").map((l) => l.trim()).filter((l) => /^%\d+$/.test(l));
+      if (ids.length === 0) return tmuxName;
+      return ids.reduce((a, b) => (Number(a.slice(1)) <= Number(b.slice(1)) ? a : b));
     } catch {
-      return []; // session gone
+      return tmuxName;
     }
-    const out: string[] = [];
-    for (const id of ids) {
-      try {
-        out.push(this.o.runner.run("tmux", ["capture-pane", "-p", "-t", id]));
-      } catch {
-        /* pane vanished mid-scan */
-      }
-    }
-    return out;
   }
 
   sampleActivity(): void {
@@ -835,24 +830,23 @@ export class SessionManager {
     const prompt: Record<string, SessionPrompt | null> = {};
     for (const s of this.o.store.listSessions()) {
       if (s.status !== "running") continue;
-      const panes = this.capturePanes(s.tmuxName);
-      if (panes.length === 0) {
+      let pane: string | null = null;
+      try {
+        pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", this.claudePane(s.tmuxName)]);
+      } catch {
+        /* tmux session gone */
+      }
+      if (pane === null) {
         next[s.id] = "idle";
         term[s.id] = false;
         remote[s.id] = false;
         prompt[s.id] = null;
         continue;
       }
-      // busy/remote if ANY pane shows the signal; the prompt comes from whichever pane
-      // is actually claude's (the one that yields a parse).
-      next[s.id] = panes.some((p) => this.paneShowsBusy(p)) ? "busy" : "idle";
-      remote[s.id] = panes.some((p) => this.paneShowsRemote(p));
-      let parsed: SessionPrompt | null = null;
-      for (const p of panes) {
-        const pr = this.parsePrompt(p);
-        if (pr) { parsed = { context: pr.context, options: pr.options, multiSelect: pr.multiSelect }; break; }
-      }
-      prompt[s.id] = parsed;
+      next[s.id] = this.paneShowsBusy(pane) ? "busy" : "idle";
+      remote[s.id] = this.paneShowsRemote(pane);
+      const p = this.parsePrompt(pane);
+      prompt[s.id] = p ? { context: p.context, options: p.options, multiSelect: p.multiSelect } : null;
       let clients = "";
       try {
         clients = this.o.runner.run("tmux", ["list-clients", "-t", s.tmuxName]).trim();
@@ -887,9 +881,10 @@ export class SessionManager {
   answerPromptMulti(id: string, ns: number[]): { ok: boolean } {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
+    const t = this.claudePane(s.tmuxName); // read + answer claude's pane, not the focused one
     let pane = "";
     try {
-      pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
+      pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", t]);
     } catch {
       /* fall through */
     }
@@ -897,7 +892,7 @@ export class SessionManager {
     if (!p || !p.multiSelect) throw new HttpError(409, "지금 이 세션에 다중선택 질문이 없어요.");
     const targets = ns.map((n) => p.options.findIndex((o) => o.n === n)).filter((i) => i >= 0);
     if (!targets.length) throw new HttpError(400, "고른 옵션이 없어요.");
-    const send = (...keys: string[]) => this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, ...keys]);
+    const send = (...keys: string[]) => this.o.runner.run("tmux", ["send-keys", "-t", t, ...keys]);
     const nap = (sec: string) => {
       try {
         this.o.runner.run("sleep", [sec]);
@@ -929,9 +924,10 @@ export class SessionManager {
   answerPromptMemo(id: string, text: string): { ok: boolean } {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
+    const t = this.claudePane(s.tmuxName); // read + type claude's pane, not the focused one
     let pane = "";
     try {
-      pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
+      pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", t]);
     } catch {
       /* fall through */
     }
@@ -941,7 +937,7 @@ export class SessionManager {
     if (idx < 0) throw new HttpError(409, "이 질문엔 자유입력(Type something) 옵션이 없어요.");
     const clean = text.replace(/\r?\n/g, " ").trim();
     if (!clean) throw new HttpError(400, "메모가 비어 있어요.");
-    const send = (...keys: string[]) => this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, ...keys]);
+    const send = (...keys: string[]) => this.o.runner.run("tmux", ["send-keys", "-t", t, ...keys]);
     const nap = (sec: string) => {
       try {
         this.o.runner.run("sleep", [sec]);
@@ -970,9 +966,10 @@ export class SessionManager {
   answerPrompt(id: string, n: number): { ok: boolean } {
     const s = this.o.store.getSession(id);
     if (!s) throw new HttpError(404, `no session ${id}`);
+    const t = this.claudePane(s.tmuxName); // read + answer claude's pane, not the focused one
     let pane = "";
     try {
-      pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", s.tmuxName]);
+      pane = this.o.runner.run("tmux", ["capture-pane", "-p", "-t", t]);
     } catch {
       /* fall through to the no-prompt error */
     }
@@ -983,14 +980,14 @@ export class SessionManager {
     const delta = targetIdx - p.selectedIdx;
     const key = delta >= 0 ? "Down" : "Up";
     for (let i = 0; i < Math.abs(delta); i++) {
-      this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, key]);
+      this.o.runner.run("tmux", ["send-keys", "-t", t, key]);
       try {
         this.o.runner.run("sleep", ["0.12"]);
       } catch {
         /* ignore */
       }
     }
-    this.o.runner.run("tmux", ["send-keys", "-t", s.tmuxName, "Enter"]);
+    this.o.runner.run("tmux", ["send-keys", "-t", t, "Enter"]);
     return { ok: true };
   }
 

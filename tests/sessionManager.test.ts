@@ -101,17 +101,32 @@ test("sampleActivity: busy while typing into the composer (status line hides 'es
   expect(mgr.sessionActivity()[e.id]).toBe("busy");
 });
 
-test("sampleActivity: split window — busy is detected in claude's pane even when another pane is focused", () => {
+test("sampleActivity: split window — reads claude's own (oldest) pane, ignoring a log pane beside it", () => {
   const { mgr, runner } = setup();
   const e = mgr.launch("myapp");
-  // Two panes: a SQL query beside claude. capture-pane -t <session> would read only the
-  // focused one; scanning all panes must still see claude's "esc to interrupt".
+  // %0 = claude (oldest pane), %1 = a log tail the user split in. Detection must read %0.
   runner.panes = [
-    "SELECT * FROM users LIMIT 200;\n  r_id ASC LIMIT 200 -- PARAMETERS: [...]",
     "❯ \n  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← 6 agents",
+    "server listening\n  r_id ASC LIMIT 200 -- PARAMETERS: [...]",
   ];
   mgr.sampleActivity();
   expect(mgr.sessionActivity()[e.id]).toBe("busy");
+});
+
+test("answerPrompt targets claude's own pane (%0), not the session's focused pane", () => {
+  const { mgr, runner } = setup();
+  const e = mgr.launch("myapp");
+  // claude's menu lives in %0; a log pane sits in %1. The answer keystrokes must go to %0.
+  runner.panes = [
+    ["무슨 도구를 쓸까?", "❯ 1. 첫번째", "  2. 두번째", "Enter to select · ↑/↓ to navigate · Esc to cancel"].join("\n"),
+    "tail -f server.log ...",
+  ];
+  runner.calls.length = 0;
+  mgr.answerPrompt(e.id, 2);
+  const sends = runner.calls.filter((c) => c.cmd === "tmux" && c.args[0] === "send-keys");
+  expect(sends.length).toBeGreaterThan(0);
+  expect(sends.every((c) => c.args.includes("%0"))).toBe(true); // never the session name / focused pane
+  expect(sends.some((c) => c.args.includes(e.tmuxName))).toBe(false);
 });
 
 test("sampleActivity: idle prompt with parenthetical text but no elapsed timer stays idle", () => {
@@ -157,7 +172,8 @@ test("connectRemote: types /remote-control + Enter into the session", () => {
   const { mgr, runner } = setup();
   const e = mgr.launch("myapp");
   mgr.connectRemote(e.id);
-  const sk = runner.calls.filter((c) => c.cmd === "tmux" && c.args[0] === "send-keys" && c.args.includes(e.tmuxName));
+  // keystrokes go to claude's own pane (%0 in the fake), not the session/focused pane
+  const sk = runner.calls.filter((c) => c.cmd === "tmux" && c.args[0] === "send-keys" && c.args.includes("%0"));
   expect(sk.some((c) => c.args.includes("/remote-control"))).toBe(true);
   expect(sk.some((c) => c.args.includes("Enter"))).toBe(true);
 });
